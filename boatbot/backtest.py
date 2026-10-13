@@ -135,6 +135,47 @@ def fetch_odds(days: int, venues_per_day: int, workers: int, end: date | None, s
                 print(f"  {done}/{len(jobs)}", flush=True)
 
 
+ODDS_MULTI = Path("data/odds_multi")
+
+
+def fetch_odds_multi(workers: int) -> None:
+    """data/odds にあるレースについて、3連単以外の券種のオッズも取得"""
+    from .scraper import parse_odds_tables, parse_win_place
+    clients = [BoatraceClient(Fetcher()) for _ in range(workers)]
+    jobs = []
+    for f in sorted(ODDS.glob("*/[0-9]*_*.json")):
+        hd, (jcd, rno) = f.parent.name, f.stem.split("_")
+        out = ODDS_MULTI / hd / f.name
+        if not out.exists():
+            jobs.append((hd, jcd, int(rno), out))
+    print(f"対象 {len(jobs)} レース", flush=True)
+
+    def one(i_job):
+        i, (hd, jcd, rno, out) = i_job
+        f = clients[i % workers].f
+        trio = parse_odds_tables(f.get("odds3f", rno=rno, jcd=jcd, hd=hd))
+        two = parse_odds_tables(f.get("odds2tf", rno=rno, jcd=jcd, hd=hd))
+        wide = parse_odds_tables(f.get("oddsk", rno=rno, jcd=jcd, hd=hd))
+        wp = parse_win_place(f.get("oddstf", rno=rno, jcd=jcd, hd=hd))
+        data = {"trio": trio[0] if trio else {}, "exacta": two[0] if two else {},
+                "quinella": two[1] if len(two) > 1 else {}, "wide": wide[0] if wide else {},
+                "win": wp[0] if wp else {}, "place": wp[1] if len(wp) > 1 else {}}
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data))
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(one, x) for x in enumerate(jobs)]
+        for fu in as_completed(futs):
+            done += 1
+            try:
+                fu.result()
+            except Exception as e:
+                print(f"  失敗: {e}", flush=True)
+            if done % 100 == 0 or done == len(jobs):
+                print(f"  {done}/{len(jobs)}", flush=True)
+
+
 # ---------------------------------------------------------------- シミュレーション
 
 def load_races() -> dict[str, list[dict]]:
@@ -220,6 +261,8 @@ def main() -> int:
     fo.add_argument("--workers", type=int, default=1)
     fo.add_argument("--end", default=None)
     fo.add_argument("--seed", type=int, default=1)
+    fm = sub.add_parser("fetch-odds-multi")
+    fm.add_argument("--workers", type=int, default=1)
     r = sub.add_parser("run")
     r.add_argument("--compare", action="store_true")
     r.add_argument("--set", action="append", default=[], help="設定の上書き 例: gamble=80")
@@ -228,6 +271,9 @@ def main() -> int:
     r.add_argument("--seeds", type=int, default=5, help="気まぐれ度の乱数を変えて平均する回数")
     a = ap.parse_args()
 
+    if a.cmd == "fetch-odds-multi":
+        fetch_odds_multi(a.workers)
+        return 0
     if a.cmd in ("fetch", "fetch-odds"):
         end = date(int(a.end[:4]), int(a.end[4:6]), int(a.end[6:])) if a.end else None
         (fetch if a.cmd == "fetch" else fetch_odds)(a.days, a.venues_per_day, a.workers, end, a.seed)

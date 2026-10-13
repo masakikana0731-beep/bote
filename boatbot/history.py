@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import threading
@@ -20,6 +21,8 @@ import requests
 
 RAW = Path("data/raw")
 GRADES = ("A1", "A2", "B1", "B2")
+BET_LABELS = {"単勝": "win", "複勝": "place", "２連単": "exacta", "２連複": "quinella",
+              "拡連複": "wide", "３連単": "tri", "３連複": "trio"}
 URL = "https://www1.mbrace.or.jp/od2/{kind}/{ym}/{k}{ymd}.lzh"
 _ZEN = str.maketrans("０１２３４５６７８９ＲＡＢＨｍ：", "0123456789RABHm:")
 
@@ -148,6 +151,7 @@ def parse_k(text: str, d: date) -> tuple[list[dict], list[dict]]:
     jcd = None
     rno = None
     cur: dict | None = None
+    bet_type = None
     lines = text.splitlines()
     i = 0
     while i < len(lines):
@@ -174,7 +178,24 @@ def parse_k(text: str, d: date) -> tuple[list[dict], list[dict]]:
         m = re.match(r"^\s+３連単\s+(\d-\d-\d)\s+(\d+)\s+人気\s+(\d+)", line)
         if m and cur:
             cur["tri_combo"], cur["tri_payout"], cur["tri_pop"] = m.group(1), int(m.group(2)), int(m.group(3))
+        # 全券種の払戻（100円あたり）。拡連複・複勝は複数、同着なら他の券種も複数になる
+        m = re.match(r"^\s+(単勝|複勝|２連単|２連複|拡連複|３連単|３連複)\s", line)
+        if m and cur:
+            bet_type = BET_LABELS[m.group(1)]
+            cur.setdefault("payouts", {}).setdefault(bet_type, {})
+            body = line[m.end():]
+        elif cur and bet_type and line.startswith(" " * 17) and re.match(r"^\s+\d(-\d){0,2}\s+\d+", line):
+            body = line  # 拡連複などの2行目以降
+        else:
+            body = None
+            if not line.strip():
+                bet_type = None
+        if body is not None and bet_type:
+            for combo, pay in re.findall(r"(?<![\d-])(\d(?:-\d){0,2})\s+(\d+)(?!\s*人気\s*$)?", body.split("人気")[0]):
+                cur["payouts"][bet_type][combo] = int(pay)
         i += 1
+    for r in races:
+        r["payouts"] = json.dumps(r.get("payouts", {}))
     return boats, races
 
 

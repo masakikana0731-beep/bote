@@ -235,6 +235,76 @@ def parse_odds3t(html: str) -> dict[str, float]:
     return odds
 
 
+def _odds_value(text: str) -> float | None:
+    """'12.3' や複勝・拡連複の '1.5-2.3'（下限-上限）→ 数値。幅があるものは下限（控えめ）を使う"""
+    m = re.match(r"^\s*([\d.]+)", text)
+    return float(m.group(1)) if m and float(m.group(1)) > 0 else None
+
+
+def parse_odds_tables(html: str) -> list[dict[str, float]]:
+    """3連複・2連単/2連複・拡連複・単勝/複勝ページの表 → 表ごとの {組番: オッズ}
+
+    列 = 1着（または1番目の艇）。行の中で n 番目のオッズは n 列目（艇 n）。
+    オッズの直前の数字が残りの艇番。3連複は2番目の艇が rowspan で省略される行がある。
+    """
+    s = _soup(html)
+    tables = []
+    for tb in s.select("div.table1 table"):
+        if not tb.select("td.oddsPoint"):
+            continue
+        odds: dict[str, float] = {}
+        second_mem: dict[int, str] = {}
+        for tr in tb.select("tbody tr"):
+            labels: list[str] = []
+            col = 0
+            for td in tr.find_all("td"):
+                cls = td.get("class") or []
+                text = td.get_text(strip=True).translate(_ZEN)
+                if "oddsPoint" in cls:
+                    col += 1
+                    v = _odds_value(text)
+                    if len(labels) >= 2:  # 3連複: 2番目と3番目
+                        second_mem[col] = labels[-2]
+                        rest = [labels[-2], labels[-1]]
+                    elif len(labels) == 1 and col in second_mem:
+                        rest = [second_mem[col], labels[-1]]
+                    elif len(labels) == 1:
+                        rest = [labels[-1]]
+                    else:
+                        rest = []
+                    key = "-".join([str(col)] + rest)
+                    if v:
+                        odds[key] = v
+                    labels = []
+                elif re.fullmatch(r"[1-6]", text):
+                    labels.append(text)
+            if not any("oddsPoint" in (td.get("class") or []) for td in tr.find_all("td")):
+                continue
+        tables.append(odds)
+    return tables
+
+
+def parse_win_place(html: str) -> list[dict[str, float]]:
+    """単勝・複勝ページ → [単勝{艇:オッズ}, 複勝{艇:オッズ下限}]"""
+    s = _soup(html)
+    out = []
+    for tb in s.select("div.table1 table"):
+        pts = tb.select("td.oddsPoint")
+        if not pts:
+            continue
+        d = {}
+        for tr in tb.select("tbody tr"):
+            tds = tr.find_all("td")
+            p = tr.select_one("td.oddsPoint")
+            if p and tds:
+                boat = tds[0].get_text(strip=True).translate(_ZEN)
+                v = _odds_value(p.get_text(strip=True))
+                if re.fullmatch(r"[1-6]", boat) and v:
+                    d[boat] = v
+        out.append(d)
+    return out
+
+
 def parse_result(html: str) -> dict | None:
     """3連単の結果 -> {'combo': '5-1-4', 'payout': 5510}（100円あたり）。未確定なら None"""
     s = _soup(html)
