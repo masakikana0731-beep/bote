@@ -132,7 +132,10 @@ function buildSliders() {
       <input type="range" min="0" max="100" step="5" name="${name}">
       <div class="ends"><span>${el.dataset.left}</span><span>${el.dataset.right}</span></div>`;
     const input = $("input", el);
-    input.addEventListener("input", () => ($(".val", el).textContent = input.value));
+    // model.target_odds と同じ式：0=8倍 〜 100=300倍（対数で等間隔）
+    const label = () => name === "gamble"
+      ? `${input.value}（狙う配当 約${Math.round(8 * Math.pow(300 / 8, input.value / 100))}倍）` : input.value;
+    input.addEventListener("input", () => ($(".val", el).textContent = label()));
   });
   $("#venues").innerHTML = Object.entries(state.venues).sort(([a], [b]) => a.localeCompare(b))
     .map(([c, n]) => `<label><input type="checkbox" value="${c}">${n}</label>`).join("");

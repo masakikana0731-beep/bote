@@ -161,20 +161,33 @@ class Ticket:
         return self.prob * self.odds
 
 
+TARGET_MIN, TARGET_MAX = 8.0, 300.0  # ギャンブル性 0 / 100 のときの狙う配当（倍）
+TARGET_SIGMA = 0.7                   # 目安からどれくらい外れてよいか（log単位。0.7 ≒ 約2倍）
+
+
+def target_odds(gamble: int) -> float:
+    """ギャンブル性(0〜100) → 狙う配当の目安（倍）。対数で等間隔：0=8倍, 50≒49倍, 100=300倍"""
+    g = max(0, min(100, gamble)) / 100
+    return TARGET_MIN * (TARGET_MAX / TARGET_MIN) ** g
+
+
 def pick_tickets(probs: dict[str, float], odds: dict[str, float], s: Settings,
                  rng: random.Random | None = None) -> list[Ticket]:
-    """ギャンブル性 g に応じて score = p × odds^(2g) で並べて上位を選ぶ。
-    g=0 なら当たりやすさ順、g=0.5 で期待値順、g=1 で高配当寄り。
+    """「狙う配当の目安」に近いオッズの中から、当たりやすい順に選ぶ。
+
+    score = log(確率) − (log(オッズ) − log(目安))² / (2σ²)
+    目安から離れたオッズほど減点される。
     """
     rng = rng or random.Random()
-    g = s.gamble / 100
+    center = math.log(target_odds(s.gamble))
     noise = s.whim / 100
     scored = []
     for k, p in probs.items():
         o = odds.get(k)
         if not o:
             continue
-        score = math.log(p) + 2 * g * math.log(o) + rng.gauss(0, 1.5 * noise)
+        dist = math.log(o) - center
+        score = math.log(p) - dist * dist / (2 * TARGET_SIGMA ** 2) + rng.gauss(0, 1.5 * noise)
         scored.append((score, Ticket(k, p, o)))
     scored.sort(key=lambda x: -x[0])
     return [t for _, t in scored[: s.tickets]]
