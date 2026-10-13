@@ -46,6 +46,11 @@ class Boat:
     tilt: float | None = None
     course: int | None = None      # スタート展示の進入コース
     ex_st: float | None = None     # スタート展示のST（Fはマイナス）
+    nat_2r: float | None = None
+    loc_2r: float | None = None
+    age: int | None = None
+    weight: float | None = None
+    meet_results: str = ""         # 今節成績（着順を空白区切り）
 
 
 @dataclass
@@ -55,6 +60,9 @@ class RaceInfo:
     hd: str
     boats: list[Boat] = field(default_factory=list)
     deadlines: dict[int, str] = field(default_factory=dict)
+    race_name: str = ""
+    wind: float | None = None
+    wave: float | None = None
 
 
 # ---------------------------------------------------------------- HTTP
@@ -132,6 +140,10 @@ def parse_racelist(html: str) -> list[Boat]:
             b.grade = g.get_text(strip=True) if g else ""
         if len(divs) > 1:
             b.name = re.sub(r"\s+", "", divs[1].get_text())
+        if len(divs) > 2:
+            m = re.search(r"(\d+)歳/([\d.]+)kg", divs[2].get_text(" ", strip=True))
+            if m:
+                b.age, b.weight = int(m.group(1)), float(m.group(2))
 
         def lines(td):
             return [t for t in td.get_text("\n", strip=True).split("\n") if t]
@@ -147,6 +159,12 @@ def parse_racelist(html: str) -> list[Boat]:
         bt = lines(tds[7])
         b.nat_win = _num(nat[0]) if nat else None
         b.loc_win = _num(loc[0]) if loc else None
+        b.nat_2r = _num(nat[1]) if len(nat) > 1 else None
+        b.loc_2r = _num(loc[1]) if len(loc) > 1 else None
+        trs = tb.find_all("tr")
+        if len(trs) >= 4:  # 4行目が今節の着順
+            b.meet_results = " ".join(
+                t for t in (td.get_text(strip=True).translate(_ZEN) for td in trs[3].find_all("td")) if t.isdigit())
         b.motor_2r = _num(mot[1]) if len(mot) > 1 else None
         b.boat_2r = _num(bt[1]) if len(bt) > 1 else None
         boats.append(b)
@@ -176,6 +194,22 @@ def parse_beforeinfo(html: str) -> dict[int, dict]:
         if st is not None and st_text.startswith("F"):
             st = -st
         out.setdefault(waku, {}).update({"course": course, "ex_st": st})
+    return out
+
+
+def parse_race_name(html: str) -> str:
+    h = _soup(html).select_one("h3.title16_titleDetail__add2020")
+    return h.get_text(" ", strip=True).split()[0] if h and h.get_text(strip=True) else ""
+
+
+def parse_weather(html: str) -> dict:
+    """直前情報の水面気象 -> {'wind': 風速m, 'wave': 波高cm}"""
+    s = _soup(html)
+    out = {}
+    for key, cls in (("wind", "is-wind"), ("wave", "is-wave")):
+        el = s.select_one(f"div.weather1_bodyUnit.{cls} .weather1_bodyUnitLabelData")
+        if el:
+            out[key] = _num(el.get_text())
     return out
 
 
@@ -230,8 +264,12 @@ class BoatraceClient:
 
     def race(self, jcd: str, rno: int, hd: str) -> RaceInfo:
         html = self.f.get("racelist", rno=rno, jcd=jcd, hd=hd)
-        info = RaceInfo(jcd=jcd, rno=rno, hd=hd, boats=parse_racelist(html), deadlines=parse_deadlines(html))
-        before = parse_beforeinfo(self.f.get("beforeinfo", rno=rno, jcd=jcd, hd=hd))
+        info = RaceInfo(jcd=jcd, rno=rno, hd=hd, boats=parse_racelist(html), deadlines=parse_deadlines(html),
+                        race_name=parse_race_name(html))
+        bhtml = self.f.get("beforeinfo", rno=rno, jcd=jcd, hd=hd)
+        before = parse_beforeinfo(bhtml)
+        w = parse_weather(bhtml)
+        info.wind, info.wave = w.get("wind"), w.get("wave")
         for b in info.boats:
             for k, v in before.get(b.waku, {}).items():
                 setattr(b, k, v)

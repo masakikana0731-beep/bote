@@ -94,6 +94,47 @@ def fetch(days: int, venues_per_day: int | None, workers: int, end: date | None,
                 print(f"  {done}/{len(jobs)}", flush=True)
 
 
+ODDS = Path("data/odds")
+
+
+def fetch_odds(days: int, venues_per_day: int, workers: int, end: date | None, seed: int) -> None:
+    """3連単確定オッズだけを取得（出走表・結果は公式一括データ history.py から取る）"""
+    end = end or date.today() - timedelta(days=1)
+    rng = random.Random(seed)
+    clients = [BoatraceClient(Fetcher()) for _ in range(workers)]
+    jobs = []
+    for i in range(days):
+        hd = (end - timedelta(days=i)).strftime("%Y%m%d")
+        vf = ODDS / hd / "_venues.json"
+        if vf.exists():
+            codes = json.loads(vf.read_text())
+        else:
+            allv = sorted(clients[0].venues(hd))
+            codes = sorted(rng.sample(allv, min(venues_per_day, len(allv))))
+            vf.parent.mkdir(parents=True, exist_ok=True)
+            vf.write_text(json.dumps(codes))
+        jobs += [(hd, jcd, rno) for jcd in codes for rno in range(1, 13)
+                 if not (ODDS / hd / f"{jcd}_{rno:02d}.json").exists()]
+    print(f"対象 {len(jobs)} レース", flush=True)
+
+    def one(i_job):
+        i, (hd, jcd, rno) = i_job
+        odds = clients[i % workers].odds3t(jcd, rno, hd)
+        (ODDS / hd / f"{jcd}_{rno:02d}.json").write_text(json.dumps(odds))
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(one, x) for x in enumerate(jobs)]
+        for f in as_completed(futs):
+            done += 1
+            try:
+                f.result()
+            except Exception as e:
+                print(f"  失敗: {e}", flush=True)
+            if done % 100 == 0 or done == len(jobs):
+                print(f"  {done}/{len(jobs)}", flush=True)
+
+
 # ---------------------------------------------------------------- シミュレーション
 
 def load_races() -> dict[str, list[dict]]:
@@ -173,6 +214,12 @@ def main() -> int:
     f.add_argument("--workers", type=int, default=1, help="同時アクセス数（公式サイトに配慮して小さく）")
     f.add_argument("--end", default=None, help="最終日 YYYYMMDD（既定=昨日）")
     f.add_argument("--seed", type=int, default=1)
+    fo = sub.add_parser("fetch-odds")
+    fo.add_argument("--days", type=int, default=90)
+    fo.add_argument("--venues-per-day", type=int, default=3)
+    fo.add_argument("--workers", type=int, default=1)
+    fo.add_argument("--end", default=None)
+    fo.add_argument("--seed", type=int, default=1)
     r = sub.add_parser("run")
     r.add_argument("--compare", action="store_true")
     r.add_argument("--set", action="append", default=[], help="設定の上書き 例: gamble=80")
@@ -181,9 +228,9 @@ def main() -> int:
     r.add_argument("--seeds", type=int, default=5, help="気まぐれ度の乱数を変えて平均する回数")
     a = ap.parse_args()
 
-    if a.cmd == "fetch":
+    if a.cmd in ("fetch", "fetch-odds"):
         end = date(int(a.end[:4]), int(a.end[4:6]), int(a.end[6:])) if a.end else None
-        fetch(a.days, a.venues_per_day, a.workers, end, a.seed)
+        (fetch if a.cmd == "fetch" else fetch_odds)(a.days, a.venues_per_day, a.workers, end, a.seed)
         return 0
 
     days = load_races()
