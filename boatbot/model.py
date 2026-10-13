@@ -29,10 +29,14 @@ class Settings:
     race_budget: int = 500
     max_races_per_day: int = 10
     # --- スライダ（0〜100） ---
-    gamble: int = 30          # ギャンブル性：0=本命党 / 100=大穴狙い
-    selectivity: int = 20     # 厳選度：0=見送りなし / 100=自信がある時だけ
-    crowd: int = 30           # 人気(オッズ)を信じる度合い：0=独自予想のみ / 100=人気通り
-    whim: int = 10            # 気まぐれ度：買い目にランダム性を混ぜる
+    gamble: int = 30          # ギャンブル性：狙う配当の目安 0=約8倍 / 100=約300倍
+    odds_width: int = 30      # 目安の幅：0=目安ぴったり / 100=幅広く
+    selectivity: int = 0      # 厳選度：買い目ごとの期待値(確率×オッズ)の下限 0=制限なし / 100=1.5以上
+    skip_fav: int = 0         # 堅いレースを見送る：0=見送らない / 100=1着確率50%超の艇がいたら見送る
+    max_wind: int = 0         # 風速が何m以上なら見送るか（0=見送らない）
+    crowd: int = 0            # 人気(オッズ)を信じる度合い：0=独自予想のみ / 100=人気通り
+    whim: int = 0             # 気まぐれ度：買い目にランダム性を混ぜる
+    predictor: str = "ml"     # ml=過去3年で学習したモデル（無ければ簡易版）/ simple=重視スライダの簡易版
     w_course: int = 70        # 重視：コース(イン有利)
     w_national: int = 60      # 重視：全国勝率
     w_local: int = 30         # 重視：当地勝率
@@ -57,9 +61,12 @@ class Settings:
         return s.clamp()
 
     def clamp(self) -> "Settings":
-        for k in ("gamble", "selectivity", "crowd", "whim", "w_course", "w_national",
+        for k in ("gamble", "odds_width", "selectivity", "skip_fav", "crowd", "whim", "w_course", "w_national",
                   "w_local", "w_motor", "w_exhibit", "w_start"):
             setattr(self, k, max(0, min(100, int(getattr(self, k)))))
+        self.max_wind = max(0, min(30, self.max_wind))
+        if self.predictor not in ("ml", "simple"):
+            self.predictor = "ml"
         self.daily_budget = max(0, self.daily_budget)
         self.race_budget = max(100, self.race_budget)
         self.tickets = max(1, min(20, self.tickets))
@@ -162,7 +169,16 @@ class Ticket:
 
 
 TARGET_MIN, TARGET_MAX = 8.0, 300.0  # ギャンブル性 0 / 100 のときの狙う配当（倍）
-TARGET_SIGMA = 0.7                   # 目安からどれくらい外れてよいか（log単位。0.7 ≒ 約2倍）
+
+
+def odds_sigma(width: int) -> float:
+    """目安の幅(0〜100) → 目安からどれくらい外れてよいか（log単位）。0=0.4(約1.5倍) / 100=1.5(約4.5倍)"""
+    return 0.4 + 1.1 * max(0, min(100, width)) / 100
+
+
+def skip_fav_threshold(v: int) -> float:
+    """堅いレースを見送る(0〜100) → 1着確率がこれを超える艇がいたら見送る。0=1.0(見送らない) / 100=0.5"""
+    return 1.0 - 0.5 * max(0, min(100, v)) / 100
 
 
 def target_odds(gamble: int) -> float:
@@ -180,14 +196,16 @@ def pick_tickets(probs: dict[str, float], odds: dict[str, float], s: Settings,
     """
     rng = rng or random.Random()
     center = math.log(target_odds(s.gamble))
+    sigma = odds_sigma(s.odds_width)
+    min_ev = 1.5 * s.selectivity / 100
     noise = s.whim / 100
     scored = []
     for k, p in probs.items():
         o = odds.get(k)
-        if not o:
+        if not o or p <= 0 or p * o < min_ev:
             continue
         dist = math.log(o) - center
-        score = math.log(p) - dist * dist / (2 * TARGET_SIGMA ** 2) + rng.gauss(0, 1.5 * noise)
+        score = math.log(p) - dist * dist / (2 * sigma ** 2) + rng.gauss(0, 1.5 * noise)
         scored.append((score, Ticket(k, p, o)))
     scored.sort(key=lambda x: -x[0])
     return [t for _, t in scored[: s.tickets]]
@@ -233,22 +251,32 @@ class Plan:
 
 
 def make_plan(boats: list[Boat], odds: dict[str, float], s: Settings, budget: int,
-              rng: random.Random | None = None) -> Plan:
+              rng: random.Random | None = None, probs: dict[str, float] | None = None,
+              wind: float | None = None) -> Plan:
+    """probs を渡せば（学習モデルの3連単確率）それを使い、無ければ重視スライダの簡易モデルで計算する"""
     if len(boats) < 6:
         return Plan([], "出走表が取得できない/欠場あり")
     if not odds:
         return Plan([], "オッズ未発表")
-    wp = win_probs(strengths(boats, s))
-    probs = blend_with_market(trifecta_probs(wp), odds, s.crowd)
+    if probs is None:
+        wp = win_probs(strengths(boats, s))
+        probs = trifecta_probs(wp)
+    else:
+        wp = {w: 0.0 for w in range(1, 7)}
+        for k, p in probs.items():
+            wp[int(k[0])] += p
+    if s.max_wind and wind is not None and wind >= s.max_wind:
+        return Plan([], f"風が強いので見送り（{wind:.0f}m）", win_probs=wp)
+    fav = max(wp.values())
+    if fav > skip_fav_threshold(s.skip_fav):
+        return Plan([], f"堅いレースなので見送り（1着確率{fav:.0%}の艇あり）", win_probs=wp)
+    probs = blend_with_market(probs, odds, s.crowd)
     picks = pick_tickets(probs, odds, s, rng)
     if not picks:
-        return Plan([], "候補なし", win_probs=wp)
+        reason = "期待値の条件を満たす買い目なし" if s.selectivity else "候補なし"
+        return Plan([], reason, win_probs=wp)
     hit = sum(t.prob for t in picks)
     avg_ev = sum(t.ev for t in picks) / len(picks)
-    # 厳選度：平均期待値(独自確率×オッズ)がしきい値未満なら見送り
-    threshold = 0.4 + 0.8 * s.selectivity / 100  # 0.4〜1.2
-    if s.selectivity > 0 and avg_ev < threshold:
-        return Plan([], f"自信不足（期待値{avg_ev:.2f} < {threshold:.2f}）", hit, avg_ev, wp)
     tickets = allocate(picks, min(budget, s.race_budget), s.allocation)
     if not tickets:
         return Plan([], "予算切れ", hit, avg_ev, wp)

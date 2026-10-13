@@ -90,7 +90,9 @@ document.addEventListener("click", async (e) => {
   const t = e.target.closest("button");
   if (!t) return;
   try {
-    if (t.dataset.stop) {
+    if (t.dataset.preset) {
+      applyPreset(t.dataset.preset);
+    } else if (t.dataset.stop) {
       if (!confirm("自動投資を停止しますか？")) return;
       await api("/api/stop", {});
       await load();
@@ -125,6 +127,27 @@ document.addEventListener("click", async (e) => {
 });
 
 // ---------- 設定
+// optimize.py の結果（2026/7/15〜10/12・3,106レース、1日3,000円・最大10R）。お金の設定は変えない
+const PRESETS = {
+  fun: { gamble: 30, odds_width: 30, tickets: 6, selectivity: 0, skip_fav: 0, crowd: 40, whim: 0, allocation: "prob", max_wind: 4,
+    note: "的中率 約25%・回収率 約86%（シミュレーション）。よく当たるがじわじわ減る" },
+  balance: { gamble: 10, odds_width: 55, tickets: 5, selectivity: 60, skip_fav: 0, crowd: 0, whim: 0, allocation: "equal", max_wind: 0,
+    note: "的中率 約19%・回収率 約99%（90%区間 75〜125%）。収支トントン前後" },
+  jackpot: { gamble: 100, odds_width: 55, tickets: 6, selectivity: 40, skip_fav: 80, crowd: 0, whim: 0, allocation: "equal", max_wind: 4,
+    note: "的中率 約6%・回収率 約137%（90%区間 82〜200%）。40連敗以上もある。過去の偶然の可能性あり" },
+};
+
+function applyPreset(key) {
+  const p = PRESETS[key], f = $("#settings-form");
+  for (const [k, v] of Object.entries(p)) {
+    const el = f.elements[k];
+    if (!el) continue;
+    el.value = v;
+    el.dispatchEvent(new Event("input"));
+  }
+  $("#preset-note").textContent = p.note + "（保存を押すと反映）";
+}
+
 function buildSliders() {
   document.querySelectorAll(".slider").forEach((el) => {
     const name = el.dataset.name;
@@ -133,8 +156,13 @@ function buildSliders() {
       <div class="ends"><span>${el.dataset.left}</span><span>${el.dataset.right}</span></div>`;
     const input = $("input", el);
     // model.target_odds と同じ式：0=8倍 〜 100=300倍（対数で等間隔）
-    const label = () => name === "gamble"
-      ? `${input.value}（狙う配当 約${Math.round(8 * Math.pow(300 / 8, input.value / 100))}倍）` : input.value;
+    const v = () => Number(input.value);
+    const label = () => ({
+      gamble: () => `${v()}（狙う配当 約${Math.round(8 * Math.pow(300 / 8, v() / 100))}倍）`,
+      odds_width: () => `${v()}（目安の約${Math.exp(0.4 + 1.1 * v() / 100).toFixed(1)}倍の範囲）`,  // model.odds_sigma
+      selectivity: () => v() ? `${v()}（期待値${(1.5 * v() / 100).toFixed(2)}以上）` : "0（制限なし）",
+      skip_fav: () => v() ? `${v()}（1着確率${Math.round(100 - 50 * v() / 100)}%超で見送り）` : "0（見送らない）",  // model.skip_fav_threshold
+    }[name] || (() => input.value))();
     input.addEventListener("input", () => ($(".val", el).textContent = label()));
   });
   $("#venues").innerHTML = Object.entries(state.venues).sort(([a], [b]) => a.localeCompare(b))

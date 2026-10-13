@@ -1,0 +1,954 @@
+{
+ "split": "20260828",
+ "n": 3001,
+ "explore_races": 1530,
+ "verify_races": 1576,
+ "objectives": {
+  "回収率重視": {
+   "desc": "回収率が最大",
+   "top": [
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 1,
+      "min_ev": 1.0,
+      "crowd": 0.0,
+      "allocation": "dutch",
+      "skip_fav": 0.6,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 377100,
+      "profit": 243100,
+      "roi": 2.814179104477612,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 101000,
+      "streak": 101
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 161900,
+      "profit": 26900,
+      "roi": 1.1992592592592592,
+      "hit": 0.007407407407407408,
+      "days": 45,
+      "plus_days": 1,
+      "dd": 122000,
+      "streak": 122
+     }
+    },
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 1,
+      "min_ev": 1.5,
+      "crowd": 0.0,
+      "allocation": "equal",
+      "skip_fav": 0.7,
+      "max_wind": 6,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 377100,
+      "profit": 242100,
+      "roi": 2.7933333333333334,
+      "hit": 0.022222222222222223,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 102000,
+      "streak": 102
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 202700,
+      "profit": 67700,
+      "roi": 1.5014814814814814,
+      "hit": 0.007407407407407408,
+      "days": 45,
+      "plus_days": 1,
+      "dd": 84000,
+      "streak": 84
+     }
+    },
+    {
+     "params": {
+      "gamble": 20,
+      "sigma": 1.5,
+      "tickets": 1,
+      "min_ev": 1.5,
+      "crowd": 0.2,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 343700,
+      "profit": 209700,
+      "roi": 2.5649253731343284,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 68000,
+      "streak": 68
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 161500,
+      "profit": 26500,
+      "roi": 1.1962962962962962,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 109000,
+      "streak": 109
+     }
+    },
+    {
+     "params": {
+      "gamble": 60,
+      "sigma": 1.5,
+      "tickets": 1,
+      "min_ev": 1.2,
+      "crowd": 0.4,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 342700,
+      "profit": 208700,
+      "roi": 2.557462686567164,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 82000,
+      "streak": 82
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 123100,
+      "profit": -11900,
+      "roi": 0.9118518518518518,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 112000,
+      "streak": 112
+     }
+    },
+    {
+     "params": {
+      "gamble": 60,
+      "sigma": 0.7,
+      "tickets": 1,
+      "min_ev": 1.2,
+      "crowd": 0.4,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 342700,
+      "profit": 208700,
+      "roi": 2.557462686567164,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 82000,
+      "streak": 82
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 123100,
+      "profit": -11900,
+      "roi": 0.9118518518518518,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 112000,
+      "streak": 112
+     }
+    }
+   ]
+  },
+  "当たる楽しさ": {
+   "desc": "的中率25%以上の中で回収率最大",
+   "top": [
+    {
+     "params": {
+      "gamble": 30,
+      "sigma": 0.4,
+      "tickets": 6,
+      "min_ev": 0.0,
+      "crowd": 0.2,
+      "allocation": "dutch",
+      "skip_fav": 1.0,
+      "max_wind": 6,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 124790,
+      "profit": -10210,
+      "roi": 0.9243703703703704,
+      "hit": 0.26666666666666666,
+      "days": 45,
+      "plus_days": 17,
+      "dd": 18760,
+      "streak": 11
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 109410,
+      "profit": -25590,
+      "roi": 0.8104444444444444,
+      "hit": 0.24444444444444444,
+      "days": 45,
+      "plus_days": 18,
+      "dd": 26570,
+      "streak": 13
+     }
+    },
+    {
+     "params": {
+      "gamble": 30,
+      "sigma": 0.7,
+      "tickets": 6,
+      "min_ev": 0.0,
+      "crowd": 0.4,
+      "allocation": "prob",
+      "skip_fav": 1.0,
+      "max_wind": 4,
+      "race_budget": 500,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 270,
+      "bet": 135000,
+      "ret": 118270,
+      "profit": -16730,
+      "roi": 0.8760740740740741,
+      "hit": 0.25555555555555554,
+      "days": 45,
+      "plus_days": 16,
+      "dd": 24870,
+      "streak": 18
+     },
+     "verify": {
+      "races": 270,
+      "bet": 135000,
+      "ret": 113910,
+      "profit": -21090,
+      "roi": 0.8437777777777777,
+      "hit": 0.2518518518518518,
+      "days": 45,
+      "plus_days": 19,
+      "dd": 30100,
+      "streak": 27
+     }
+    },
+    {
+     "params": {
+      "gamble": 70,
+      "sigma": 1.5,
+      "tickets": 8,
+      "min_ev": 0.6,
+      "crowd": 0.0,
+      "allocation": "equal",
+      "skip_fav": 1.0,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 115800,
+      "profit": -19200,
+      "roi": 0.8577777777777778,
+      "hit": 0.28888888888888886,
+      "days": 45,
+      "plus_days": 11,
+      "dd": 25480,
+      "streak": 11
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 104850,
+      "profit": -30150,
+      "roi": 0.7766666666666666,
+      "hit": 0.26666666666666666,
+      "days": 45,
+      "plus_days": 16,
+      "dd": 44000,
+      "streak": 11
+     }
+    },
+    {
+     "params": {
+      "gamble": 10,
+      "sigma": 0.7,
+      "tickets": 8,
+      "min_ev": 0.6,
+      "crowd": 0.0,
+      "allocation": "dutch",
+      "skip_fav": 1.0,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 111730,
+      "profit": -23270,
+      "roi": 0.8276296296296296,
+      "hit": 0.37037037037037035,
+      "days": 45,
+      "plus_days": 16,
+      "dd": 24640,
+      "streak": 9
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 104830,
+      "profit": -30170,
+      "roi": 0.7765185185185185,
+      "hit": 0.34814814814814815,
+      "days": 45,
+      "plus_days": 15,
+      "dd": 35140,
+      "streak": 8
+     }
+    },
+    {
+     "params": {
+      "gamble": 0,
+      "sigma": 1.0,
+      "tickets": 8,
+      "min_ev": 0.0,
+      "crowd": 0.0,
+      "allocation": "dutch",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 500,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 263,
+      "bet": 131500,
+      "ret": 106760,
+      "profit": -24740,
+      "roi": 0.8118631178707224,
+      "hit": 0.27756653992395436,
+      "days": 45,
+      "plus_days": 18,
+      "dd": 28540,
+      "streak": 16
+     },
+     "verify": {
+      "races": 269,
+      "bet": 134500,
+      "ret": 92020,
+      "profit": -42480,
+      "roi": 0.6841635687732343,
+      "hit": 0.241635687732342,
+      "days": 45,
+      "plus_days": 7,
+      "dd": 45170,
+      "streak": 16
+     }
+    }
+   ]
+  },
+  "一発狙い": {
+   "desc": "的中率5〜15%の中で回収率最大",
+   "top": [
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.7,
+      "tickets": 4,
+      "min_ev": 0.8,
+      "crowd": 0.4,
+      "allocation": "equal",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 267500,
+      "profit": 133500,
+      "roi": 1.9962686567164178,
+      "hit": 0.07462686567164178,
+      "days": 45,
+      "plus_days": 10,
+      "dd": 33540,
+      "streak": 26
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 44650,
+      "profit": -90350,
+      "roi": 0.3307407407407407,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 130000,
+      "streak": 130
+     }
+    },
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.7,
+      "tickets": 5,
+      "min_ev": 1.0,
+      "crowd": 0.4,
+      "allocation": "dutch",
+      "skip_fav": 0.5,
+      "max_wind": 6,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 229060,
+      "profit": 95060,
+      "roi": 1.7094029850746268,
+      "hit": 0.08208955223880597,
+      "days": 45,
+      "plus_days": 11,
+      "dd": 33540,
+      "streak": 26
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 35080,
+      "profit": -99920,
+      "roi": 0.25985185185185183,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 116760,
+      "streak": 68
+     }
+    },
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 6,
+      "min_ev": 0.6,
+      "crowd": 0.6,
+      "allocation": "prob",
+      "skip_fav": 0.6,
+      "max_wind": 6,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 227900,
+      "profit": 93900,
+      "roi": 1.7007462686567165,
+      "hit": 0.09701492537313433,
+      "days": 45,
+      "plus_days": 12,
+      "dd": 25000,
+      "streak": 25
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 75910,
+      "profit": -59090,
+      "roi": 0.5622962962962963,
+      "hit": 0.037037037037037035,
+      "days": 45,
+      "plus_days": 4,
+      "dd": 78470,
+      "streak": 37
+     }
+    },
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 8,
+      "min_ev": 0.9,
+      "crowd": 0.6,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 219630,
+      "profit": 85630,
+      "roi": 1.6390298507462686,
+      "hit": 0.11194029850746269,
+      "days": 45,
+      "plus_days": 15,
+      "dd": 31140,
+      "streak": 26
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 140450,
+      "profit": 5450,
+      "roi": 1.0403703703703704,
+      "hit": 0.06666666666666667,
+      "days": 45,
+      "plus_days": 8,
+      "dd": 53680,
+      "streak": 49
+     }
+    },
+    {
+     "params": {
+      "gamble": 90,
+      "sigma": 0.7,
+      "tickets": 5,
+      "min_ev": 0.8,
+      "crowd": 0.4,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 219240,
+      "profit": 85240,
+      "roi": 1.6361194029850745,
+      "hit": 0.06716417910447761,
+      "days": 45,
+      "plus_days": 9,
+      "dd": 37000,
+      "streak": 37
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 116500,
+      "profit": -18500,
+      "roi": 0.8629629629629629,
+      "hit": 0.02962962962962963,
+      "days": 45,
+      "plus_days": 4,
+      "dd": 84000,
+      "streak": 84
+     }
+    }
+   ]
+  },
+  "安定": {
+   "desc": "最大下落が小さい中で回収率最大",
+   "top": [
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 2,
+      "min_ev": 0.6,
+      "crowd": 0.2,
+      "allocation": "dutch",
+      "skip_fav": 0.6,
+      "max_wind": 6,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 327350,
+      "profit": 193350,
+      "roi": 2.442910447761194,
+      "hit": 0.03731343283582089,
+      "days": 45,
+      "plus_days": 5,
+      "dd": 53000,
+      "streak": 53
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 162030,
+      "profit": 27030,
+      "roi": 1.2002222222222223,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 73000,
+      "streak": 73
+     }
+    },
+    {
+     "params": {
+      "gamble": 20,
+      "sigma": 1.5,
+      "tickets": 1,
+      "min_ev": 1.5,
+      "crowd": 0.2,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 343700,
+      "profit": 209700,
+      "roi": 2.5649253731343284,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 68000,
+      "streak": 68
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 161500,
+      "profit": 26500,
+      "roi": 1.1962962962962962,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 109000,
+      "streak": 109
+     }
+    },
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 1,
+      "min_ev": 1.0,
+      "crowd": 0.0,
+      "allocation": "dutch",
+      "skip_fav": 0.6,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 377100,
+      "profit": 243100,
+      "roi": 2.814179104477612,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 101000,
+      "streak": 101
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 161900,
+      "profit": 26900,
+      "roi": 1.1992592592592592,
+      "hit": 0.007407407407407408,
+      "days": 45,
+      "plus_days": 1,
+      "dd": 122000,
+      "streak": 122
+     }
+    },
+    {
+     "params": {
+      "gamble": 80,
+      "sigma": 0.4,
+      "tickets": 1,
+      "min_ev": 1.5,
+      "crowd": 0.0,
+      "allocation": "equal",
+      "skip_fav": 0.7,
+      "max_wind": 6,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 377100,
+      "profit": 242100,
+      "roi": 2.7933333333333334,
+      "hit": 0.022222222222222223,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 102000,
+      "streak": 102
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 202700,
+      "profit": 67700,
+      "roi": 1.5014814814814814,
+      "hit": 0.007407407407407408,
+      "days": 45,
+      "plus_days": 1,
+      "dd": 84000,
+      "streak": 84
+     }
+    },
+    {
+     "params": {
+      "gamble": 60,
+      "sigma": 1.5,
+      "tickets": 1,
+      "min_ev": 1.2,
+      "crowd": 0.4,
+      "allocation": "prob",
+      "skip_fav": 0.5,
+      "max_wind": 99,
+      "race_budget": 1000,
+      "daily_budget": 3000,
+      "max_races": 10
+     },
+     "explore": {
+      "races": 134,
+      "bet": 134000,
+      "ret": 342700,
+      "profit": 208700,
+      "roi": 2.557462686567164,
+      "hit": 0.022388059701492536,
+      "days": 45,
+      "plus_days": 3,
+      "dd": 82000,
+      "streak": 82
+     },
+     "verify": {
+      "races": 135,
+      "bet": 135000,
+      "ret": 123100,
+      "profit": -11900,
+      "roi": 0.9118518518518518,
+      "hit": 0.014814814814814815,
+      "days": 45,
+      "plus_days": 2,
+      "dd": 112000,
+      "streak": 112
+     }
+    }
+   ]
+  }
+ },
+ "default": {
+  "params": {
+   "gamble": 30,
+   "sigma": 0.7,
+   "tickets": 5,
+   "min_ev": 0.0,
+   "crowd": 0.0,
+   "allocation": "dutch",
+   "skip_fav": 1.0,
+   "max_wind": 99,
+   "race_budget": 500,
+   "daily_budget": 3000,
+   "max_races": 10
+  },
+  "explore": {
+   "races": 270,
+   "bet": 135000,
+   "ret": 116200,
+   "profit": -18800,
+   "roi": 0.8607407407407407,
+   "hit": 0.23333333333333334,
+   "days": 45,
+   "plus_days": 16,
+   "dd": 22400,
+   "streak": 26
+  },
+  "verify": {
+   "races": 270,
+   "bet": 135000,
+   "ret": 118240,
+   "profit": -16760,
+   "roi": 0.8758518518518519,
+   "hit": 0.24444444444444444,
+   "days": 45,
+   "plus_days": 19,
+   "dd": 27090,
+   "streak": 24
+  }
+ },
+ "market_only": {
+  "params": {
+   "gamble": 30,
+   "sigma": 0.7,
+   "tickets": 5,
+   "min_ev": 0.0,
+   "crowd": 1.0,
+   "allocation": "dutch",
+   "skip_fav": 1.0,
+   "max_wind": 99,
+   "race_budget": 500,
+   "daily_budget": 3000,
+   "max_races": 10
+  },
+  "explore": {
+   "races": 270,
+   "bet": 135000,
+   "ret": 99200,
+   "profit": -35800,
+   "roi": 0.7348148148148148,
+   "hit": 0.24814814814814815,
+   "days": 45,
+   "plus_days": 12,
+   "dd": 39990,
+   "streak": 25
+  },
+  "verify": {
+   "races": 270,
+   "bet": 135000,
+   "ret": 114000,
+   "profit": -21000,
+   "roi": 0.8444444444444444,
+   "hit": 0.2740740740740741,
+   "days": 45,
+   "plus_days": 16,
+   "dd": 23840,
+   "streak": 18
+  }
+ },
+ "param_effect": {
+  "gamble": {
+   "0": 0.724,
+   "10": 0.728,
+   "20": 0.739,
+   "30": 0.713,
+   "40": 0.703,
+   "50": 0.691,
+   "60": 0.702,
+   "70": 0.708,
+   "80": 0.875,
+   "90": 0.784,
+   "100": 0.65
+  },
+  "sigma": {
+   "0.4": 0.752,
+   "0.7": 0.767,
+   "1.0": 0.741,
+   "1.5": 0.702,
+   "3.0": 0.698
+  },
+  "tickets": {
+   "1": 0.732,
+   "2": 0.722,
+   "3": 0.715,
+   "4": 0.726,
+   "5": 0.731,
+   "6": 0.736,
+   "8": 0.759
+  },
+  "min_ev": {
+   "0.0": 0.723,
+   "0.6": 0.74,
+   "0.8": 0.786,
+   "0.9": 0.783,
+   "1.0": 0.767,
+   "1.1": 0.757,
+   "1.2": 0.682,
+   "1.5": 0.605
+  },
+  "crowd": {
+   "0.0": 0.779,
+   "0.2": 0.768,
+   "0.4": 0.728,
+   "0.6": 0.648
+  },
+  "allocation": {
+   "dutch": 0.729,
+   "equal": 0.728,
+   "prob": 0.737
+  },
+  "skip_fav": {
+   "0.5": 0.757,
+   "0.6": 0.762,
+   "0.7": 0.698,
+   "1.0": 0.708
+  },
+  "max_wind": {
+   "4": 0.734,
+   "6": 0.713,
+   "99": 0.746
+  },
+  "race_budget": {
+   "300": 0.754,
+   "500": 0.746,
+   "1000": 0.693
+  }
+ }
+}

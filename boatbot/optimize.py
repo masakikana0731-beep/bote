@@ -83,7 +83,7 @@ def target_odds(g: float) -> float:
     return 8.0 * (300 / 8.0) ** (g / 100)
 
 
-def simulate(data: dict, s: Strategy, mask: np.ndarray | None = None) -> dict:
+def simulate(data: dict, s: Strategy, mask: np.ndarray | None = None, with_bets: bool = False) -> dict:
     hd, P, O, res, pay = data["hd"], data["P"], data["odds"], data["res"], data["payout"]
     idx = np.arange(len(hd)) if mask is None else np.where(mask)[0]
     center = math.log(target_odds(s.gamble))
@@ -131,7 +131,10 @@ def simulate(data: dict, s: Strategy, mask: np.ndarray | None = None) -> dict:
         spent += total
         races += 1
         bets.append((hd[i], total, ret))
-    return summarize(bets)
+    out = summarize(bets)
+    if with_bets:
+        out["bets"] = bets
+    return out
 
 
 def summarize(bets) -> dict:

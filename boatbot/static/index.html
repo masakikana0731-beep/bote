@@ -55,10 +55,26 @@
 
       <fieldset>
         <legend>🎲 スタイル</legend>
+        <div class="label">おすすめ設定（過去90日のシミュレーションから）</div>
+        <div class="actions">
+          <button type="button" data-preset="fun">当たる楽しさ</button>
+          <button type="button" data-preset="balance">バランス</button>
+          <button type="button" data-preset="jackpot">一発狙い</button>
+        </div>
+        <p id="preset-note" class="hint"></p>
         <div class="slider" data-name="gamble" data-left="本命党" data-right="大穴狙い">ギャンブル性</div>
-        <div class="slider" data-name="selectivity" data-left="どんどん参加" data-right="自信がある時だけ">厳選度</div>
+        <div class="slider" data-name="odds_width" data-left="目安ぴったり" data-right="幅広く">配当の目安の幅</div>
+        <div class="slider" data-name="selectivity" data-left="制限なし" data-right="期待値が高い目だけ">厳選度</div>
+        <div class="slider" data-name="skip_fav" data-left="見送らない" data-right="よく見送る">堅いレースを見送る</div>
         <div class="slider" data-name="crowd" data-left="独自予想" data-right="人気に乗る">人気(オッズ)をどれだけ信じるか</div>
         <div class="slider" data-name="whim" data-left="きっちり" data-right="気まぐれ">気まぐれ度</div>
+        <label>風速が何m以上なら見送るか（0=見送らない）<input type="number" name="max_wind" min="0" max="30"></label>
+        <label>予想モデル
+          <select name="predictor">
+            <option value="ml">学習モデル（過去3年のデータで学習）</option>
+            <option value="simple">簡易モデル（下の「何を重視する？」で調整）</option>
+          </select>
+        </label>
         <label>1レースの点数（上限）<input type="number" name="tickets" min="1" max="20"></label>
         <label>金額の配分
           <select name="allocation">
@@ -70,7 +86,7 @@
       </fieldset>
 
       <fieldset>
-        <legend>🔍 何を重視する？</legend>
+        <legend>🔍 何を重視する？（簡易モデルのみ）</legend>
         <div class="slider" data-name="w_course" data-left="無視" data-right="重視">コース（イン有利）</div>
         <div class="slider" data-name="w_national" data-left="無視" data-right="重視">選手の全国勝率</div>
         <div class="slider" data-name="w_local" data-left="無視" data-right="重視">当地勝率</div>

@@ -57,3 +57,25 @@ def test_plan_respects_remaining_daily_budget():
     boats, odds = race()
     p = make_plan(boats, odds, Settings(selectivity=0), 50, random.Random(0))
     assert p.total == 0 and p.skip_reason == "予算切れ"
+
+
+def test_plan_with_external_probs_and_skips():
+    boats, odds = race()
+    probs = {k: 1 / len(odds) for k in odds}
+    probs["1-2-3"] *= 50  # 1号艇が強いレース
+    tot = sum(probs.values())
+    probs = {k: v / tot for k, v in probs.items()}
+    s = Settings(selectivity=0)
+    p = make_plan(boats, odds, s, 3000, random.Random(0), probs=probs)
+    assert p.tickets and p.total <= s.race_budget
+    assert make_plan(boats, odds, Settings(max_wind=5), 3000, probs=probs, wind=7).skip_reason.startswith("風")
+    assert make_plan(boats, odds, Settings(skip_fav=100), 3000, probs=probs).tickets  # 1着確率が50%未満なら買う
+    strong = {k: (0.9 / 20 if k.startswith("1-") else 0.1 / 100) for k in odds}
+    assert make_plan(boats, odds, Settings(skip_fav=100), 3000, probs=strong).skip_reason.startswith("堅い")
+
+
+def test_selectivity_filters_by_ev():
+    boats, odds = race()
+    probs = {k: 1 / len(odds) / 2 for k in odds}  # 期待値が低い
+    p = make_plan(boats, odds, Settings(selectivity=100), 3000, probs=probs)
+    assert all(t.ev >= 1.5 for t in p.tickets)

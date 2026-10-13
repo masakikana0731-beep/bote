@@ -54,7 +54,7 @@ def setup(tmp_path, monkeypatch):
     note = FakeNotifier()
 
     def make(mode="paper", executor=None, **kw):
-        store.save_settings(Settings(auto_mode=mode, selectivity=0, **kw))
+        store.save_settings(Settings(auto_mode=mode, selectivity=0, predictor="simple", **kw))
         ex = {"paper": PaperExecutor(), "real": executor or PaperExecutor()}
         return Engine(store, client=FakeClient(), notifier=note, executors=ex)
     return store, note, make

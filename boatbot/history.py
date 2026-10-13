@@ -72,6 +72,21 @@ def download(start: date, end: date, workers: int = 3, interval: float = 1.0) ->
         list(ex.map(one, jobs))
 
 
+def update(today: date) -> bool:
+    """前日分までの不足ファイルを取得し、増えていれば history.parquet を作り直す（毎朝1回）"""
+    have = sorted((RAW / "K").glob("k*.lzh"))
+    if not have:
+        return False  # 初回の一括取得は手動で（README参照）
+    last = have[-1].stem[1:]
+    start = date(2000 + int(last[:2]), int(last[2:4]), int(last[4:])) + timedelta(1)
+    end = today - timedelta(1)
+    if start > end:
+        return False
+    download(start, end, workers=1)
+    build()
+    return True
+
+
 def read_lzh(path: Path) -> str:
     import lhafile
     if path.stat().st_size == 0:

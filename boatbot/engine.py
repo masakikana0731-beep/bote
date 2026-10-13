@@ -61,6 +61,7 @@ class Engine:
                                      headless=os.environ.get("TELEBOAT_HEADLESS", "1") != "0"),
         }
         self.failures = 0
+        self._predictor = None  # None=未初期化 / False=使えない / LivePredictor
         self._buy_lock = threading.Lock()
         self._stop = threading.Event()
         self.last_error = ""
@@ -133,9 +134,34 @@ class Engine:
     def ensure_schedule(self, hd: str) -> None:
         if self.store.has_schedule(hd):
             return
+        try:  # 学習モデル用の過去データを前日分まで更新
+            from .history import update
+            if update(datetime.strptime(hd, "%Y%m%d").date()):
+                log.info("過去データを更新しました")
+        except Exception as e:
+            log.warning("過去データの更新に失敗: %s", e)
         for jcd in self.client.venues(hd):
             self.store.add_schedule(hd, jcd, self.client.deadlines(jcd, hd))
         log.info("%s のスケジュールを取得しました", hd)
+
+    # ---- 学習モデル
+    def ml_probs(self, info, hd: str) -> tuple[dict | None, str]:
+        """学習モデルの3連単確率。モデルや過去データが無い・失敗したときは簡易モデルに切り替える"""
+        if self._predictor is None:
+            try:
+                from .ml import LivePredictor
+                self._predictor = LivePredictor()
+            except Exception as e:
+                log.warning("学習モデルを使えません（簡易モデルで予想）: %s", e)
+                self._predictor = False
+        if not self._predictor:
+            return None, "simple"
+        try:
+            return self._predictor.trifecta(info, hd), "ml"
+        except Exception as e:
+            log.exception("学習モデルでの予想に失敗")
+            self.last_error = f"学習モデル失敗（簡易モデルで予想）: {e}"
+            return None, "simple"
 
     # ---- 1レース予想
     def predict(self, hd: str, jcd: str, rno: int, deadline: str, notify: bool = True, auto: bool = False) -> dict:
@@ -144,11 +170,12 @@ class Engine:
         remaining = max(0, s.daily_budget - spent)
         info = self.client.race(jcd, rno, hd)
         odds = self.client.odds3t(jcd, rno, hd)
+        probs, used = self.ml_probs(info, hd) if s.predictor == "ml" else (None, "simple")
         if races >= s.max_races_per_day:
-            plan = make_plan(info.boats, odds, s, 0)
+            plan = make_plan(info.boats, odds, s, 0, probs=probs, wind=info.wind)
             plan.tickets, plan.skip_reason = [], "本日の最大参加レース数に到達"
         else:
-            plan = make_plan(info.boats, odds, s, remaining, random.Random())
+            plan = make_plan(info.boats, odds, s, remaining, random.Random(), probs=probs, wind=info.wind)
             if not plan.tickets and remaining < 100 and not plan.skip_reason.startswith("自信"):
                 plan.skip_reason = "本日の予算上限に到達"
         tickets = [{"combo": t.combo, "odds": t.odds, "prob": round(t.prob, 4), "amount": t.amount}
@@ -161,6 +188,7 @@ class Engine:
                        "motor_2r": b.motor_2r, "ex_time": b.ex_time, "course": b.course,
                        "win_prob": round((plan.win_probs or {}).get(b.waku, 0), 3)} for b in info.boats],
             "settings": {"gamble": s.gamble, "selectivity": s.selectivity, "crowd": s.crowd},
+            "predictor": used,
         }
         status = "pending" if tickets else "pass"
         rid = self.store.add_rec(hd, jcd, rno, deadline, now_jst().isoformat(timespec="seconds"),

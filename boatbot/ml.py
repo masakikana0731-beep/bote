@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 HIST = Path("data/history.parquet")
-MODEL_DIR = Path("data/model")
+MODEL_DIR = Path("models")
 
 TRAIN_START = "20231001"  # 学習: この日〜（それ以前の3か月は過去成績系の特徴量を溜めるためだけに使う）
 TRAIN_END = "20260430"   # 学習: 〜この日
