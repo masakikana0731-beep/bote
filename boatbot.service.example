@@ -1,0 +1,14 @@
+[Unit]
+Description=boatbot
+After=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/bote
+Environment=BOATBOT_TOKEN=change-me
+Environment=NTFY_TOPIC=change-me-to-a-random-name
+ExecStart=/home/pi/bote/run.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
