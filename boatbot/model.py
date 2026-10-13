@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 from dataclasses import dataclass
 from itertools import permutations
@@ -13,6 +14,12 @@ from .scraper import Boat
 
 # 全国平均のコース別1着率（おおよその値。年や場によって変わる）
 COURSE_WIN_RATE = {1: 0.55, 2: 0.14, 3: 0.12, 4: 0.10, 5: 0.06, 6: 0.03}
+
+
+def hard_daily_cap() -> int | None:
+    """環境変数 BOATBOT_HARD_DAILY_CAP（円）。画面からはこれ以上に設定できない最終上限。"""
+    v = os.environ.get("BOATBOT_HARD_DAILY_CAP", "").strip()
+    return int(v) if v.isdigit() else None
 
 
 @dataclass
@@ -38,6 +45,7 @@ class Settings:
     lead_minutes: int = 8     # 締切何分前に予想するか
     venues: str = ""          # 対象場コード（カンマ区切り、空=全場）
     enabled: bool = True
+    auto_mode: str = "off"    # 自動投資：off=通知だけ / paper=仮想で自動購入 / real=テレボートで自動購入
 
     @classmethod
     def from_dict(cls, d: dict) -> "Settings":
@@ -58,6 +66,12 @@ class Settings:
         self.lead_minutes = max(2, min(30, self.lead_minutes))
         if self.allocation not in ("equal", "dutch", "prob"):
             self.allocation = "dutch"
+        if self.auto_mode not in ("off", "paper", "real"):
+            self.auto_mode = "off"
+        cap = hard_daily_cap()
+        if cap is not None:
+            self.daily_budget = min(self.daily_budget, cap)
+            self.race_budget = min(self.race_budget, max(100, cap))
         return self
 
     def venue_set(self) -> set[str]:

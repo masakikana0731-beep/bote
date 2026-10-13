@@ -11,6 +11,7 @@
 <header>
   <h1>🚤 ボート予想くん</h1>
   <div id="budget" class="budget"></div>
+  <div id="automode" class="automode hidden"></div>
 </header>
 
 <nav>
@@ -27,10 +28,24 @@
     <h2>このあとのレース</h2>
     <p class="hint">締切の数分前に自動で予想して通知します。「今すぐ予想」で手動でもOK。</p>
     <div id="upcoming"></div>
+    <h2>自動購入の記録</h2>
+    <div id="buylog"></div>
   </section>
 
   <section id="tab-settings" class="hidden">
     <form id="settings-form">
+      <fieldset>
+        <legend>🤖 自動投資</legend>
+        <label>モード
+          <select name="auto_mode">
+            <option value="off">オフ（通知だけ・自分で買う）</option>
+            <option value="paper">仮想（お金を使わず自動で買ったことにする）</option>
+            <option value="real">本番（テレボートで自動購入）</option>
+          </select>
+        </label>
+        <p id="real-note" class="hint"></p>
+      </fieldset>
+
       <fieldset>
         <legend>💰 お金（安全装置）</legend>
         <label>1日の最大投資額（円）<input type="number" name="daily_budget" step="100" min="0"></label>

@@ -13,7 +13,11 @@ header h1 { margin: 0; font-size: 18px; }
 .budget { margin-top: 6px; font-size: 13px; }
 .bar { height: 6px; background: rgba(255,255,255,.3); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .bar > div { height: 100%; background: #fff; }
-nav { display: flex; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 64px; z-index: 1; }
+.automode { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 13px; font-weight: bold; }
+.automode button { padding: 4px 10px; font-size: 13px; background: var(--bad); color: #fff; border-color: #fff; }
+.tag.paper { background: #6c5ce7; color: #fff; }
+.tag.failed, .tag.unknown { background: var(--bad); color: #fff; }
+nav { display: flex; background: var(--card); border-bottom: 1px solid var(--line); }
 nav button { flex: 1; padding: 12px; border: 0; background: none; color: var(--muted); font-size: 15px; }
 nav button.active { color: var(--accent); border-bottom: 3px solid var(--accent); font-weight: bold; }
 main { padding: 12px 16px 80px; max-width: 640px; margin: 0 auto; }

@@ -29,10 +29,19 @@ function renderBudget() {
   const pct = s.daily_budget ? Math.min(100, (state.spent / s.daily_budget) * 100) : 100;
   $("#budget").innerHTML = `今日の投資 ${yen(state.spent)} / ${yen(s.daily_budget)}（残り ${yen(state.remaining)}・${state.races}/${s.max_races_per_day}R）
     <div class="bar"><div style="width:${pct}%"></div></div>`;
+  const mode = { paper: "🧪 仮想 自動投資中", real: "🤖 本番 自動投資中" }[s.auto_mode];
+  $("#automode").classList.toggle("hidden", !mode);
+  $("#automode").innerHTML = mode ? `<span>${mode}</span><button data-stop="1">緊急停止</button>` : "";
+}
+
+function renderBuyLog() {
+  $("#buylog").innerHTML = state.buy_log.map((l) => `<div class="row"><span class="hint">${l.at.slice(11, 16)} ${l.mode === "real" ? "本番" : "仮想"} ${yen(l.total)}</span>
+    <span>${l.ok ? "✅" : l.uncertain ? "❓" : "❌"} ${esc(l.message)}</span></div>`).join("") || `<p class="hint">まだありません</p>`;
 }
 
 function recCard(r) {
-  const label = { pending: "未対応", bought: "購入済", skipped: "見送った", pass: "ツールが見送り" }[r.status];
+  const label = { pending: "未対応", bought: "購入済", skipped: "見送った", pass: "ツールが見送り",
+    paper: "仮想購入", failed: "自動購入失敗", unknown: "購入不明・要確認" }[r.status];
   const hit = r.returned > 0;
   let body = "";
   if (r.status === "pass") {
@@ -47,7 +56,12 @@ function recCard(r) {
     result = `<div>結果 ${boats(r.result_combo)} 払戻 ${yen(r.payout)}/100円 ${hit ? `<span class="tag hit">的中 +${yen(r.returned)}</span>` : ""}</div>`;
   }
   let actions = "";
-  if (r.status === "pending" || r.status === "skipped" || r.status === "bought") {
+  if (r.status === "unknown") {  // 履歴を見て本人が確定させる
+    actions = `<div class="actions">
+      <a class="btn primary" href="${esc(state.teleboat_url)}" target="_blank" rel="noopener">履歴を確認</a>
+      <button class="good" data-status="bought" data-id="${r.id}">買えていた</button>
+      <button data-status="skipped" data-id="${r.id}">買えていなかった</button></div>`;
+  } else if (["pending", "skipped", "bought", "failed"].includes(r.status)) {
     actions = `<div class="actions">
       <button data-copy="${r.id}">📋 買い目コピー</button>
       <a class="btn primary" href="${esc(state.teleboat_url)}" target="_blank" rel="noopener">テレボートを開く</a>
@@ -69,13 +83,19 @@ function renderToday() {
   $("#upcoming").innerHTML = state.upcoming.map((u) => `<div class="row">
       <span>${esc(u.venue)} ${u.rno}R <span class="hint">締切 ${u.deadline}</span></span>
       <button data-predict="${u.jcd}:${u.rno}">今すぐ予想</button></div>`).join("") || `<p class="hint">本日の対象レースは終了 / 未取得</p>`;
+  renderBuyLog();
 }
 
 document.addEventListener("click", async (e) => {
   const t = e.target.closest("button");
   if (!t) return;
   try {
-    if (t.dataset.status) {
+    if (t.dataset.stop) {
+      if (!confirm("自動投資を停止しますか？")) return;
+      await api("/api/stop", {});
+      await load();
+      fillSettings();
+    } else if (t.dataset.status) {
       await api(`/api/recs/${t.dataset.id}/status`, { status: t.dataset.status });
       await load();
     } else if (t.dataset.copy) {
@@ -126,6 +146,10 @@ function fillSettings() {
     if (el.type === "checkbox") el.checked = !!v; else el.value = v;
     el.dispatchEvent(new Event("input"));
   }
+  $("#real-note").textContent = (state.allow_real
+    ? "本番モードはPC側で許可されています。"
+    : "本番モードを使うにはPC側で BOATBOT_ALLOW_REAL=1 と teleboat_flow.py の準備が必要です（README参照）。")
+    + (state.hard_cap != null ? ` 最終上限：1日${yen(state.hard_cap)}` : "");
   const sel = new Set(s.venues.split(",").filter(Boolean));
   document.querySelectorAll("#venues input").forEach((c) => (c.checked = sel.has(c.value)));
 }
@@ -138,6 +162,8 @@ $("#settings-form").addEventListener("submit", async (e) => {
     data[el.name] = el.type === "checkbox" ? el.checked : el.type === "number" || el.type === "range" ? Number(el.value) : el.value;
   }
   data.venues = [...document.querySelectorAll("#venues input:checked")].map((c) => c.value).join(",");
+  if (data.auto_mode === "real" && state.settings.auto_mode !== "real" &&
+      !confirm(`本番の自動購入をONにします。\n1日 最大${yen(data.daily_budget)}・1レース最大${yen(data.race_budget)}・最大${data.max_races_per_day}R\n\nテレボートの約定ではツールによる投票が禁止されており、利用停止になる可能性があります。よろしいですか？`)) return;
   await api("/api/settings", data);
   $("#saved").textContent = "保存しました ✔";
   setTimeout(() => ($("#saved").textContent = ""), 2000);

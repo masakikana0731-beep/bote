@@ -16,14 +16,20 @@ CREATE TABLE IF NOT EXISTS schedule (
 CREATE TABLE IF NOT EXISTS recs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hd TEXT, jcd TEXT, rno INTEGER, deadline TEXT, created_at TEXT,
-    status TEXT,              -- pending=未対応 / bought=購入済 / skipped=自分で見送り / pass=ツールが見送り
+    status TEXT,              -- pending=未対応 / bought=購入済 / paper=仮想購入 / failed=自動購入失敗
+                              -- unknown=購入されたか不明 / skipped=自分で見送り / pass=ツールが見送り
     tickets TEXT, total INTEGER, info TEXT,
     result_combo TEXT, payout INTEGER, returned INTEGER,
     UNIQUE (hd, jcd, rno));
+CREATE TABLE IF NOT EXISTS buy_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, rec_id INTEGER, at TEXT, mode TEXT,
+    ok INTEGER, uncertain INTEGER, total INTEGER, message TEXT);
 """
 
-# 予算を消費しているとみなすステータス（未対応も「買ったかもしれない」ので安全側で数える）
-SPENDING = ("pending", "bought")
+# 予算を消費しているとみなすステータス（未対応・不明も「買ったかもしれない」ので安全側で数える）
+SPENDING = ("pending", "bought", "paper", "unknown")
+# 実際にお金が動いた（かもしれない）ステータス
+REAL = ("bought", "unknown")
 
 
 class Store:
@@ -97,17 +103,29 @@ class Store:
         rows = self._q("SELECT * FROM recs WHERE status != 'pass' AND result_combo IS NULL")
         return [self._rec(r) for r in rows]
 
-    def spent(self, hd: str) -> tuple[int, int]:
+    def spent(self, hd: str, exclude_id: int | None = None) -> tuple[int, int]:
         """(使用額, 参加レース数)"""
-        r = self._q(f"SELECT COALESCE(SUM(total),0) s, COUNT(*) c FROM recs WHERE hd=? AND status IN {SPENDING}", (hd,))[0]
+        r = self._q(f"SELECT COALESCE(SUM(total),0) s, COUNT(*) c FROM recs WHERE hd=? AND status IN {SPENDING}"
+                    " AND id != ?", (hd, exclude_id or -1))[0]
         return r["s"], r["c"]
 
+    def real_spent(self, hd: str) -> int:
+        """実際にお金が動いた（かもしれない）額"""
+        return self._q(f"SELECT COALESCE(SUM(total),0) s FROM recs WHERE hd=? AND status IN {REAL}", (hd,))[0]["s"]
+
+    def log_buy(self, rec_id: int, at: str, mode: str, ok: bool, uncertain: bool, total: int, message: str) -> None:
+        self._q("INSERT INTO buy_log (rec_id, at, mode, ok, uncertain, total, message) VALUES (?,?,?,?,?,?,?)",
+                (rec_id, at, mode, int(ok), int(uncertain), total, message))
+
+    def buy_log(self, limit: int = 30) -> list[dict]:
+        return [dict(r) for r in self._q("SELECT * FROM buy_log ORDER BY id DESC LIMIT ?", (limit,))]
+
     def stats(self) -> list[dict]:
-        """日別の収支。real=購入済のみ / virtual=推奨を全部買っていた場合"""
-        rows = self._q("""
+        """日別の収支。real=実際に購入（手動・本番自動）/ virtual=推奨を全部買っていた場合"""
+        rows = self._q(f"""
             SELECT hd,
-              SUM(CASE WHEN status='bought' THEN total ELSE 0 END) real_bet,
-              SUM(CASE WHEN status='bought' THEN COALESCE(returned,0) ELSE 0 END) real_ret,
+              SUM(CASE WHEN status IN {REAL} THEN total ELSE 0 END) real_bet,
+              SUM(CASE WHEN status IN {REAL} THEN COALESCE(returned,0) ELSE 0 END) real_ret,
               SUM(CASE WHEN status!='pass' THEN total ELSE 0 END) virt_bet,
               SUM(CASE WHEN status!='pass' THEN COALESCE(returned,0) ELSE 0 END) virt_ret,
               SUM(CASE WHEN status!='pass' AND returned>0 THEN 1 ELSE 0 END) hits,

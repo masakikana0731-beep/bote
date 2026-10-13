@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .engine import Engine, Notifier, deadline_dt, now_jst
-from .model import Settings
+from .model import Settings, hard_daily_cap
 from .scraper import VENUES
 from .store import Store
 
@@ -82,6 +82,9 @@ def state():
         "venues": VENUES,
         "teleboat_url": TELEBOAT_URL,
         "last_error": engine.last_error,
+        "allow_real": os.environ.get("BOATBOT_ALLOW_REAL") == "1",
+        "hard_cap": hard_daily_cap(),
+        "buy_log": store.buy_log(10),
     }
 
 
@@ -89,7 +92,15 @@ def state():
 def save_settings(data: dict):
     s = Settings.from_dict({**store.settings().__dict__, **data})
     store.save_settings(s)
+    engine.failures = 0
     return s.__dict__
+
+
+@app.post("/api/stop", dependencies=[Depends(auth)])
+def emergency_stop():
+    """緊急停止：自動投資をオフにする"""
+    engine.stop_auto("画面の緊急停止ボタンが押されました")
+    return store.settings().__dict__
 
 
 class StatusIn(BaseModel):
