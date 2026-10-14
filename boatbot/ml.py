@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 HIST = Path("data/history.parquet")
+BEFORE = Path("data/before.parquet")  # 直前情報（boatbot.collect で収集）。無ければ使わない
 MODEL_DIR = Path("models")
 
 TRAIN_START = "20231001"  # 学習: この日〜（それ以前の3か月は過去成績系の特徴量を溜めるためだけに使う）
@@ -70,6 +71,15 @@ FEATURES = [
     "motor_res_s", "motor_n", "motor_res30_s", "boat_res_s", "motor_exd_s", "ex_vs_motor", "ex_vs_racer",
     "racer_exd", "motor_rel", "rank_motor",
 ]
+# 直前情報（スタート展示・チルト・部品交換・気象）。data/before.parquet がある期間だけ値が入る
+BEFORE_FEATURES = [
+    "ex_st", "ex_st_rel", "ex_st_rank", "ex_st_vs_avg", "ex_course_changed",
+    "tilt", "tilt_rel", "prop_new", "parts_n", "parts_major", "parts_ring", "parts_elec", "parts_carb",
+    "adj_weight", "weight_diff", "temp", "water_temp", "temp_diff", "wind_rel", "wind_along", "wind_cross",
+    "in_ex_st", "out_ex_st", "ex_st_vs_in",
+]
+BI_COLS = ["bi_ex_weight", "bi_adj_weight", "bi_tilt", "bi_propeller", "bi_parts", "bi_ex_course", "bi_ex_st",
+           "bi_w_temp", "bi_w_wind", "bi_w_wind_dir", "bi_w_water_temp", "bi_w_course_dir"]
 PL_TEMPS = (1.0, 0.75, 0.55)  # 学習時の段階ごとの温度（学習後に検証期間で改めて推定する）
 
 
@@ -105,6 +115,11 @@ def load_history() -> pd.DataFrame:
     df["race_id"] = df["hd"] + df["jcd"] + df["rno"].astype(str).str.zfill(2)
     df["st"] = df["st_raw"].map(_st)
     df["is_f"] = df["st_raw"].astype(str).str.startswith("F").astype(int)
+    if BEFORE.exists():
+        b = pd.read_parquet(BEFORE)
+        b = b.rename(columns={c: f"bi_{c}" for c in b.columns if c not in ("hd", "jcd", "rno", "waku")})
+        df = df.merge(b[["hd", "jcd", "rno", "waku"] + [c for c in BI_COLS if c in b]],
+                      on=["hd", "jcd", "rno", "waku"], how="left")
     df = df.sort_values(["date", "race_id", "waku"]).reset_index(drop=True)
     return df
 
@@ -229,6 +244,50 @@ def _finish(df: pd.DataFrame, priors: dict) -> pd.DataFrame:
         df[f"rank_{col}"] = df.groupby("race_id")[col].rank(ascending=False, method="average")
     ex = df["ex_time"].where(df["ex_time"] > 0)
     df["rank_ex_time"] = ex.groupby(df["race_id"]).rank(ascending=False, method="average")
+    df = df.copy()  # 列の追加が多く断片化するのでまとめる
+    # --- 直前情報（スタート展示）と普段のST・隣の艇との比較
+    df["ex_st_vs_avg"] = df["ex_st"] - df["st_course"]
+    df["in_ex_st"] = at("ex_st", df["course"] - 1)
+    df["out_ex_st"] = at("ex_st", df["course"] + 1)
+    df["ex_st_vs_in"] = df["ex_st"] - df["in_ex_st"]
+    return df
+
+
+MAJOR_PARTS = ("ピストン", "シリンダ", "シャフト", "キャリボディ", "ギア")
+
+
+def _before_basic(df: pd.DataFrame) -> pd.DataFrame:
+    """直前情報の列（bi_*）→ 特徴量。列が無ければ NaN"""
+    for c in BI_COLS:
+        if c not in df:
+            df[c] = np.nan
+    num = lambda c: pd.to_numeric(df[c], errors="coerce")
+    df["ex_st"] = num("bi_ex_st")
+    df["ex_st_rel"] = df["ex_st"] - df.groupby("race_id")["ex_st"].transform("mean")
+    df["ex_st_rank"] = df.groupby("race_id")["ex_st"].rank(method="average")
+    exc = num("bi_ex_course")
+    df["ex_course_changed"] = np.where(exc.notna(), (exc != df["waku"]).astype(float), np.nan)
+    df["tilt"] = num("bi_tilt")
+    df["tilt_rel"] = df["tilt"] - df.groupby("race_id")["tilt"].transform("mean")
+    prop = df["bi_propeller"]
+    df["prop_new"] = np.where(prop.notna(), prop.astype(str).str.contains("新").astype(float), np.nan)
+    parts = df["bi_parts"]
+    has = parts.notna()
+    ps = parts.fillna("").astype(str)
+    df["parts_n"] = np.where(has, ps.map(lambda x: len([t for t in x.split("/") if t])), np.nan)
+    df["parts_major"] = np.where(has, ps.map(lambda x: float(any(k in x for k in MAJOR_PARTS))), np.nan)
+    for name, key in (("parts_ring", "リング"), ("parts_elec", "電気"), ("parts_carb", "キャブ")):
+        df[name] = np.where(has, ps.str.contains(key).astype(float), np.nan)
+    df["adj_weight"] = num("bi_adj_weight")
+    df["weight_diff"] = num("bi_ex_weight") - pd.to_numeric(df["weight"], errors="coerce")
+    df["temp"], df["water_temp"] = num("bi_w_temp"), num("bi_w_water_temp")
+    df["temp_diff"] = df["temp"] - df["water_temp"]
+    # 風向き：公式サイトの画像番号（16方位）。コースの向きとの差で「追い風・向かい風・横風」を表す
+    rel = (num("bi_w_wind_dir") - num("bi_w_course_dir")) % 16
+    wind = num("bi_w_wind")
+    df["wind_rel"] = rel
+    df["wind_along"] = wind * np.cos(2 * np.pi * rel / 16)
+    df["wind_cross"] = wind * np.sin(2 * np.pi * rel / 16)
     return df
 
 
@@ -259,6 +318,7 @@ def _basic(df: pd.DataFrame) -> pd.DataFrame:
         df["top3"] = (df["finish"] <= 3).astype(float)
         df["finish_f"] = df["finish"].astype(float)
     df["one"] = 1.0
+    df = _before_basic(df)
     return df
 
 
@@ -306,7 +366,8 @@ def live_features(race: pd.DataFrame, snap: dict, priors: dict) -> pd.DataFrame:
     df = df.join(snap["mo"], on=["jcd", "motor_no"]).join(snap["mo30"], on=["jcd", "motor_no"])
     df = df.join(snap["bo"], on=["jcd", "boat_no"]).join(snap["rex"], on="toban")
     df = _finish(df, priors)
-    df[FEATURES] = df[FEATURES].apply(pd.to_numeric, errors="coerce")
+    cols = FEATURES + BEFORE_FEATURES
+    df[cols] = df[cols].apply(pd.to_numeric, errors="coerce")
     return df
 
 
@@ -323,6 +384,8 @@ def race_frame(info, hd: str) -> pd.DataFrame:
             "course": b.course if b.course else b.waku, "wind": info.wind, "wave": info.wave,
             "deadline": info.deadlines.get(info.rno, ""),
             "motor_no": b.motor_no, "boat_no": b.boat_no,
+            **{f"bi_{k}": v for k, v in (getattr(b, "before", None) or {}).items()},
+            **{f"bi_w_{k}": v for k, v in (getattr(info, "weather", None) or {}).items()},
         })
     return pd.DataFrame(rows)
 
@@ -436,7 +499,8 @@ def to_matrix(df: pd.DataFrame, scores: np.ndarray):
 
 def train() -> None:
     import lightgbm as lgb
-    print("特徴量を作成中…", flush=True)
+    feats = FEATURES + (BEFORE_FEATURES if BEFORE.exists() else [])
+    print(f"特徴量を作成中…（{len(feats)}個）", flush=True)
     hist = add_features(load_history())
     priors = course_priors(hist)
     df = clean_races(hist)
@@ -449,21 +513,21 @@ def train() -> None:
     params = dict(objective=pl_objective(Ytr), metric="None", learning_rate=0.05,
                   num_leaves=31, min_data_in_leaf=200, feature_fraction=0.8, bagging_fraction=0.8,
                   bagging_freq=1, verbose=-1, seed=0)
-    dtr = lgb.Dataset(tr[FEATURES], free_raw_data=False)
-    dva = lgb.Dataset(va[FEATURES], reference=dtr)
+    dtr = lgb.Dataset(tr[feats], free_raw_data=False)
+    dva = lgb.Dataset(va[feats], reference=dtr)
 
     def feval(preds, _ds):
         return "pl_loglik", top3_loglik(preds.reshape(-1, 6), Yva, PL_TEMPS), True
     booster = lgb.train(params, dtr, 5000, valid_sets=[dva], feval=feval,
                         callbacks=[lgb.early_stopping(150), lgb.log_evaluation(200)])
-    _, S, Y = to_matrix(va, booster.predict(va[FEATURES], num_iteration=booster.best_iteration))
+    _, S, Y = to_matrix(va, booster.predict(va[feats], num_iteration=booster.best_iteration))
     temps = fit_temps(S, Y)
     print(f"温度 {temps}  検証の対数尤度 {top3_loglik(S, Y, temps):.4f}", flush=True)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     booster.save_model(str(MODEL_DIR / "lgb.txt"), num_iteration=booster.best_iteration)
-    imp = dict(zip(FEATURES, booster.feature_importance("gain").round(1).tolist()))
+    imp = dict(zip(feats, booster.feature_importance("gain").round(1).tolist()))
     (MODEL_DIR / "meta.json").write_text(encoding="utf-8", data=json.dumps(
-        {"temps": temps, "features": FEATURES, "train_end": TRAIN_END, "valid_end": VALID_END,
+        {"temps": temps, "features": feats, "train_end": TRAIN_END, "valid_end": VALID_END,
          "objective": "plackett_luce", "best_iteration": booster.best_iteration, "importance": imp,
          "priors": priors}, ensure_ascii=False, indent=1))
     print("保存しました", MODEL_DIR)
