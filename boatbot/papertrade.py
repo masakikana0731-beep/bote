@@ -8,8 +8,11 @@
   python -m boatbot.papertrade --no-update  # 過去データの更新をしない
 
 買い方（検証中の仮説）:
-  確率 = 学習モデル^W_MODEL × 市場(1/オッズ)^W_MARKET を正規化
-  期待値 = 確率 × オッズ が閾値以上の3連単を、1レース最大5点・100円ずつ。1日3,000円・最大10レース
+  3連単：確率 = 学習モデル^W_MODEL × 市場(1/オッズ)^W_MARKET を正規化。
+         期待値 = 確率 × オッズ が閾値以上の目を、1レース最大5点・100円ずつ
+  単勝・複勝・拡連複：学習モデルの確率 × オッズ が一番高い1点を、閾値以上なら100円
+         （確定オッズのシミュレーションでは期待値の下限を上げるほど回収率が上がった。それが本物かを確かめる）
+  どれも1日3,000円・最大10レース（券種・条件ごとに別々に数える）
 """
 from __future__ import annotations
 
@@ -25,11 +28,15 @@ import numpy as np
 import pandas as pd
 
 from .collect import ODDS, ODDS_LIVE, before_path
+
+ODDS_MULTI = Path("data/odds_multi")
 from .scraper import Fetcher, parse_beforeinfo_full, parse_odds3t
 
 TRI = [f"{a}-{b}-{c}" for a, b, c in permutations(range(1, 7), 3)]
 W_MODEL, W_MARKET = 0.12, 0.929  # 展示の進入コースで予想し、2026/7/25〜8/31 の確定オッズで推定
-THRESHOLDS = (0.9, 1.0, 1.1)
+THRESHOLDS = (0.9, 1.0, 1.1)        # 3連単
+TYPE_THRESHOLDS = (1.0, 1.2, 1.5)   # 単勝・複勝・拡連複（確定オッズのシミュレーションで良く見えた条件）
+TYPE_NAMES = {"tri": "3連単", "win": "単勝", "place": "複勝", "wide": "拡連複"}
 PER_RACE, DAILY, MAX_RACES = 5, 3000, 10
 OUT = Path("data/papertrade")
 
@@ -87,6 +94,35 @@ def final_odds(hd: str, jcd: str, rno: int, f: Fetcher | None) -> np.ndarray | N
     return np.array([o.get(c, 0.0) for c in TRI], dtype=float) if len(o) >= 100 else None
 
 
+def type_probs(p_tri: np.ndarray) -> dict[str, dict[str, float]]:
+    """3連単確率 → 単勝・複勝（2着以内）・拡連複（2艇とも3着以内）の確率"""
+    win, place, wide = {}, {}, {}
+    for (a, b, c), p in zip(permutations(range(1, 7), 3), p_tri):
+        win[str(a)] = win.get(str(a), 0) + p
+        for x in (a, b):
+            place[str(x)] = place.get(str(x), 0) + p
+        for x, y in ((a, b), (a, c), (b, c)):
+            k = f"{min(x, y)}-{max(x, y)}"
+            wide[k] = wide.get(k, 0) + p
+    return {"win": win, "place": place, "wide": wide}
+
+
+def final_multi(hd: str, jcd: str, rno: int, f: Fetcher | None) -> dict | None:
+    """単勝・複勝・拡連複の確定オッズ（data/odds_multi に保存。無ければ取得）"""
+    from .scraper import parse_odds_tables, parse_win_place
+    p = ODDS_MULTI / hd / f"{jcd}_{rno:02d}.json"
+    if not p.exists() and f is not None:
+        try:
+            wp = parse_win_place(f.get("oddstf", rno=rno, jcd=jcd, hd=hd))
+            wide = parse_odds_tables(f.get("oddsk", rno=rno, jcd=jcd, hd=hd))
+            data = {"win": wp[0] if wp else {}, "place": wp[1] if len(wp) > 1 else {}, "wide": wide[0] if wide else {}}
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(data))
+        except Exception:
+            return None
+    return json.loads(p.read_text()) if p.exists() else None
+
+
 def score_day(hist: pd.DataFrame, hd: str, fetch_final: bool = True) -> dict | None:
     races = hist[hist["hd"] == hd].drop_duplicates("race_id").set_index("race_id")
     if races.empty:
@@ -97,7 +133,7 @@ def score_day(hist: pd.DataFrame, hd: str, fetch_final: bool = True) -> dict | N
         d = json.loads(p.read_text())
         if d.get("late") or len(d.get("tri", {})) < 100:
             continue
-        snaps.setdefault(f"{hd}{jcd}{rno}", {})[int(lead[1:])] = np.array([d["tri"].get(c, 0.0) for c in TRI])
+        snaps.setdefault(f"{hd}{jcd}{rno}", {})[int(lead[1:])] = d
     rids = [r for r in snaps if r in races.index]
     if not rids:
         return None
@@ -107,23 +143,47 @@ def score_day(hist: pd.DataFrame, hd: str, fetch_final: bool = True) -> dict | N
     for rid in sorted(rids, key=lambda r: str(races.at[r, "deadline"])):
         if rid not in probs:
             continue
-        pay = json.loads(races.at[rid, "payouts"]).get("tri", {})
-        R = np.array([pay.get(c, 0) for c in TRI], dtype=float)
-        fo = final_odds(hd, rid[8:10], int(rid[10:]), fetcher)
-        for lead, O in snaps[rid].items():
+        base = {"race_id": rid, "deadline": str(races.at[rid, "deadline"])}
+        pays = json.loads(races.at[rid, "payouts"])
+        jcd, rno = rid[8:10], int(rid[10:])
+        # --- 3連単（モデルと市場の混合確率 × オッズ）
+        R = np.array([pays.get("tri", {}).get(c, 0) for c in TRI], dtype=float)
+        fo = final_odds(hd, jcd, rno, fetcher)
+        for lead, snap in snaps[rid].items():
+            O = np.array([snap["tri"].get(c, 0.0) for c in TRI], dtype=float)
             for src, odds in (("締切前", O), ("確定", fo)):
                 if odds is None:
                     continue
-                B = blend(probs[rid], odds)
-                ev = B * odds
+                ev = blend(probs[rid], odds) * odds
                 for th in THRESHOLDS:
                     pick = [int(j) for j in np.argsort(-ev)[:PER_RACE] if ev[j] >= th and odds[j] > 0]
                     if pick:
-                        rows.append({"race_id": rid, "deadline": str(races.at[rid, "deadline"]), "lead": lead, "src": src,
-                                     "th": th, "picks": [TRI[j] for j in pick], "ev": [round(float(ev[j]), 3) for j in pick],
+                        rows.append({**base, "type": "tri", "lead": lead, "src": src, "th": th,
+                                     "picks": [TRI[j] for j in pick], "ev": [round(float(ev[j]), 3) for j in pick],
                                      "odds_pre": [float(O[j]) for j in pick],
                                      "odds_final": [float(fo[j]) for j in pick] if fo is not None else None,
                                      "rets": [float(R[j]) for j in pick]})
+        # --- 単勝・複勝・拡連複（モデルの確率 × オッズ が一番高い1点）
+        tp = type_probs(probs[rid])
+        fm = None
+        for lead, snap in snaps[rid].items():
+            for t in ("win", "place", "wide"):
+                pre = snap.get(t) or {}
+                if not pre:
+                    continue
+                if fm is None:
+                    fm = final_multi(hd, jcd, rno, fetcher) or {}
+                for src, odds in (("締切前", pre), ("確定", fm.get(t) or {})):
+                    evs = {k: tp[t].get(k, 0) * o for k, o in odds.items() if o and o > 0}
+                    if not evs:
+                        continue
+                    k = max(evs, key=evs.get)
+                    for th in TYPE_THRESHOLDS:
+                        if evs[k] >= th:
+                            rows.append({**base, "type": t, "lead": lead, "src": src, "th": th, "picks": [k],
+                                         "ev": [round(evs[k], 3)], "odds_pre": [float(pre.get(k, 0))],
+                                         "odds_final": [float((fm.get(t) or {}).get(k, 0))] if fm.get(t) else None,
+                                         "rets": [float(pays.get(t, {}).get(k, 0))]})
     OUT.mkdir(parents=True, exist_ok=True)
     res = {"hd": hd, "races": len(rids), "rows": rows}
     (OUT / f"{hd}.json").write_text(json.dumps(res, ensure_ascii=False))
@@ -137,10 +197,13 @@ def summarize() -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
+    if "type" not in df:
+        df["type"] = "tri"
+    df["type"] = df["type"].fillna("tri")
     df["day"] = df["race_id"].str[:8]
     out = []
-    for (lead, src, th), g in df.groupby(["lead", "src", "th"]):
-        # 予算：締切順に、1日3,000円・最大10レースまで
+    for (t, lead, src, th), g in df.groupby(["type", "lead", "src", "th"]):
+        # 予算：締切順に、1日3,000円・最大10レースまで（券種・条件ごとに別々に）
         g = g.sort_values(["day", "deadline"])
         taken, spent, races, cur = [], 0, 0, None
         for _, r in g.iterrows():
@@ -153,13 +216,13 @@ def summarize() -> pd.DataFrame:
             taken.append((r["day"], 100 * n, sum(r["rets"][:n]), r))
             spent += 100 * n
             races += 1
-        t = pd.DataFrame([(d, b, x) for d, b, x, _ in taken], columns=["day", "bet", "ret"])
+        tb = pd.DataFrame([(d, b, x) for d, b, x, _ in taken], columns=["day", "bet", "ret"])
         drift = [np.log(f / p) for _, _, _, r in taken if r["odds_final"] for p, f in zip(r["odds_pre"], r["odds_final"])
                  if p > 0 and f > 0]
-        out.append({"記録": f"{lead}分前", "選ぶオッズ": src, "期待値≥": th, "日数": t["day"].nunique(),
-                    "レース": len(t), "投資": int(t["bet"].sum()), "払戻": int(t["ret"].sum()),
-                    "回収率": round(t["ret"].sum() / max(t["bet"].sum(), 1), 3),
-                    "的中レース": int((t["ret"] > 0).sum()),
+        out.append({"券種": TYPE_NAMES[t], "記録": f"{lead}分前", "選ぶオッズ": src, "期待値≥": th,
+                    "日数": tb["day"].nunique(), "レース": len(tb), "投資": int(tb["bet"].sum()), "払戻": int(tb["ret"].sum()),
+                    "回収率": round(tb["ret"].sum() / max(tb["bet"].sum(), 1), 3),
+                    "的中レース": int((tb["ret"] > 0).sum()),
                     "オッズの変化(確定/締切前,中央値)": round(float(np.exp(np.median(drift))), 3) if drift else None})
     return pd.DataFrame(out)
 
