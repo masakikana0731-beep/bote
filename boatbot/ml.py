@@ -28,7 +28,7 @@ HIST = Path("data/history.parquet")
 BEFORE = Path("data/before.parquet")  # 直前情報（boatbot.collect で収集）。無ければ使わない
 MODEL_DIR = Path("models")
 
-TRAIN_START = "20231001"  # 学習: この日〜（それ以前の3か月は過去成績系の特徴量を溜めるためだけに使う）
+TRAIN_START = "20180401"  # 学習: この日〜（2018/1〜3 は過去成績系の特徴量を溜めるためだけに使う）
 TRAIN_END = "20260430"   # 学習: 〜この日
 VALID_END = "20260714"   # 検証(温度・木の本数の決定): TRAIN_END の翌日〜この日
 # テスト: VALID_END の翌日以降（オッズを取得してある期間。戦略シミュレーションに使う）
