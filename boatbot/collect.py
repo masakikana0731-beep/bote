@@ -149,6 +149,14 @@ def _snap_odds(f: Fetcher, hd: str, jcd: str, rno: int, dl: datetime, lead: int)
     data["win"], data["place"] = (wp[0] if wp else {}), (wp[1] if len(wp) > 1 else {})
     wide = parse_odds_tables(f.get("oddsk", rno=rno, jcd=jcd, hd=hd))
     data["wide"] = wide[0] if wide else {}
+    if lead == max(LEADS):  # 直前情報（展示・進入）も保存しておく（紙上の売買で本番と同じ進入コースを使うため）
+        try:
+            html = f.get("beforeinfo", rno=rno, jcd=jcd, hd=hd)
+            bp = before_path(hd, jcd, rno)
+            bp.parent.mkdir(parents=True, exist_ok=True)
+            bp.write_bytes(gzip.compress(html.encode("utf-8")))
+        except Exception:
+            pass
     data["ts_end"] = datetime.now(JST).isoformat()
     data["late"] = datetime.now(JST) >= dl  # 取り終わる前に締切を過ぎた（確定オッズに近い）
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -185,21 +193,32 @@ def _watch(interval: int, workers: int) -> None:
         # 日付が変わったとき・30分ごと（締切の変更に追従）・まだ空のときに日程を読み直す
         if hd != day or not schedule or now - loaded > timedelta(minutes=30):
             if hd != day:
-                submitted = {}
+                submitted, schedule = {}, {}
             day, loaded = hd, now
+            # 場ごとに取り、失敗した場は前回の値を残す（1ページの失敗で全体を捨てない）
             try:
-                new = {}
-                for jcd in client.venues(hd):
+                venues = client.venues(hd)
+            except Exception as e:
+                venues = sorted({k[0] for k in schedule})
+                print(f"{now:%H:%M} {hd}: 開催場の取得に失敗 {e}", flush=True)
+            new, failed = {}, []
+            for jcd in venues:
+                try:
                     for rno, hhmm in client.deadlines(jcd, hd).items():
                         h, m = map(int, hhmm.split(":"))
                         new[(jcd, rno)] = now.replace(hour=h, minute=m, second=0, microsecond=0)
-                if len(new) != len(schedule):
-                    print(f"{hd}: {len(new)} レース", flush=True)
+                except Exception:
+                    failed.append(jcd)
+                    new.update({k: v for k, v in schedule.items() if k[0] == jcd})
+            if new and len(new) != len(schedule):
+                print(f"{now:%H:%M} {hd}: {len(new)} レース", flush=True)
+            if new:
                 schedule = new
-            except Exception as e:
-                print(f"{hd}: 日程の取得に失敗 {e}", flush=True)
+            if failed or not venues:
+                print(f"{now:%H:%M} {hd}: 締切時刻の取得に失敗した場 {failed}（5分後に再試行）", flush=True)
+                loaded = now - timedelta(minutes=25)
             if not schedule:
-                time.sleep(600)
+                time.sleep(300)
                 continue
         for (jcd, rno), dl in sorted(schedule.items(), key=lambda x: x[1]):
             for lead in LEADS:
