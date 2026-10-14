@@ -162,11 +162,12 @@ def parse_k(text: str, d: date) -> tuple[list[dict], list[dict]]:
         elif "KEND" in line[:6]:
             jcd = None
         t = line.translate(_ZEN)
-        m = re.match(r"^\s+(\d{1,2})R\s+(\S+)?\s+H(\d+)m\s+(\S+)\s+風\s+(\S+)\s+(\d+)m\s+波\s+(\d+)cm", t)
+        # レース名に全角スペースが入ることがある（例：「予　選」）ので、名前は H○○m までの任意の文字列とする
+        m = re.match(r"^\s+(\d{1,2})R\s+.*?\s+H(\d+)m\s+(\S+)\s+風\s+(\S+)\s+(\d+)m\s+波\s+(\d+)cm", t)
         if m and jcd:
             rno = int(m.group(1))
-            cur = {"hd": f"{d:%Y%m%d}", "jcd": jcd, "rno": rno, "weather": m.group(4),
-                   "wind_dir": m.group(5), "wind": int(m.group(6)), "wave": int(m.group(7)),
+            cur = {"hd": f"{d:%Y%m%d}", "jcd": jcd, "rno": rno, "weather": m.group(3),
+                   "wind_dir": m.group(4), "wind": int(m.group(5)), "wave": int(m.group(6)),
                    "tri_combo": None, "tri_payout": None, "tri_pop": None}
             races.append(cur)
         m = re.match(r"^\s+(\S{1,2})\s+([1-6])\s+(\d{4})\s.{8,12}?\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\d)\s+([F\-L]?[\d.]+|\S+)", line)
