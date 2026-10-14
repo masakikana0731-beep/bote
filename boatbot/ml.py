@@ -3,7 +3,8 @@
 流れ:
   1. history.parquet（番組表＋競走成績）から、各艇の「レース前に分かる」特徴量を作る
      - 過去成績系の特徴量は必ず「その日より前」のデータだけで計算する（未来の情報を使わない）
-  2. LightGBM（LambdaRank）で「どの艇が上位に来やすいか」のスコアを学習
+  2. LightGBM で各艇の「強さスコア」を学習。目的関数は 1〜3着の Plackett-Luce 尤度
+     （以前は LambdaRank。確率の当てやすさを直接学習するほうがテスト期間の対数尤度が良かった）
   3. スコア → 1着確率（softmax）。2着・3着は段階ごとに温度を変えた Plackett-Luce で計算
      （温度は検証期間で最尤推定。素の Harville 法は人気薄の2・3着を過大評価しがちなため）
   4. 3連単120通りの確率を出す
@@ -53,7 +54,20 @@ FEATURES = [
     "nat_win_rel", "motor_2r_rel", "r_st_rel",
     # レース種別
     "race_kind", "rno",
+    # 調子（コースの有利不利を除いた3着以内率・1着率。その日より前）
+    "form90_top3", "form90_win", "form30_top3", "n30", "form365_top3",
+    # スタート（そのコースでの平均ST・STのばらつき）
+    "st_course", "st_std",
+    # その場との相性・場・時間帯・今節
+    "venue_res_s", "jcd_num", "hour", "meet_n", "meet_last",
+    # 隣の艇（内側・外側）と1コースの艇
+    "in_r_st_mean", "in_r_course_win", "in_st_course", "in_nat_win", "in_form90_top3",
+    "out_r_st_mean", "out_r_course_win", "out_st_course", "out_nat_win", "out_form90_top3",
+    "st_vs_in", "st_vs_out", "c1_course_win", "c1_st",
+    # レース内の順位・相対値
+    "rank_r_course_win", "rank_form90_top3", "rank_ex_time", "form_rel",
 ]
+PL_TEMPS = (1.0, 0.75, 0.55)  # 学習時の段階ごとの温度（学習後に検証期間で改めて推定する）
 
 
 # ---------------------------------------------------------------- 前処理
@@ -98,14 +112,20 @@ def _rolling_by(df: pd.DataFrame, keys: list[str], cols: dict[str, str], window:
     g = df[keys + ["date"] + list(cols)].copy()
     g = g.sort_values(keys + ["date"])
     for col, how in cols.items():
-        rolled = (g.set_index("date").groupby(keys, sort=False)[col]
+        # sort=True: 結果の並びが g（keys→date 順）と一致する。sort=False は複数キーで並びが崩れることがある
+        rolled = (g.set_index("date").groupby(keys, sort=True)[col]
                   .rolling(window, closed="left").agg(how))
+        for lv, k in enumerate(keys):
+            if not (rolled.index.get_level_values(lv).to_numpy() == g[k].to_numpy()).all():
+                raise RuntimeError(f"rolling の並びが一致しません: {keys}")
         out.loc[g.index, f"{col}_{how}_{window}"] = rolled.to_numpy()
     return out
 
 
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df = _basic(df)
+    priors = course_priors(df)
+    df = _residuals(df, priors)
     # --- 過去成績（当日を含まない）
     rc = _rolling_by(df, ["toban", "course"], {"win": "sum", "top3": "sum", "one": "sum"}, "365D")
     rr = _rolling_by(df, ["toban"], {"st": "mean", "is_f": "sum"}, "180D")
@@ -116,7 +136,26 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["r_st_mean"], df["r_f_180"] = rr["st_mean_180D"], rr["is_f_sum_180D"]
     df["r_finish_60"], df["r_n_365"] = r60["finish_f_mean_60D"], r365["one_sum_365D"]
     df["venue_course_win"] = vc["win_mean_365D"]
-    return _finish(df, course_priors(df))
+    f90 = _rolling_by(df, ["toban"], {"res_top3": "mean", "res_win": "mean"}, "90D")
+    f30 = _rolling_by(df, ["toban"], {"res_top3": "mean", "one": "sum"}, "30D")
+    f365 = _rolling_by(df, ["toban"], {"res_top3": "mean"}, "365D")
+    stc = _rolling_by(df, ["toban", "course"], {"st": "mean"}, "365D")
+    sts = _rolling_by(df, ["toban"], {"st": "std"}, "180D")
+    ven = _rolling_by(df, ["toban", "jcd"], {"res_top3": "mean", "one": "sum"}, "730D")
+    df["form90_top3"], df["form90_win"] = f90["res_top3_mean_90D"], f90["res_win_mean_90D"]
+    df["form30_top3"], df["n30"] = f30["res_top3_mean_30D"], f30["one_sum_30D"]
+    df["form365_top3"] = f365["res_top3_mean_365D"]
+    df["st_course"], df["st_std"] = stc["st_mean_365D"], sts["st_std_180D"]
+    df["venue_res"], df["venue_n"] = ven["res_top3_mean_730D"], ven["one_sum_730D"]
+    return _finish(df, priors)
+
+
+def _residuals(df: pd.DataFrame, priors: dict) -> pd.DataFrame:
+    """着順からコースの有利不利を除いた成績（調子の集計用）"""
+    if "top3" in df:
+        df["res_top3"] = df["top3"] - df["course"].map(lambda c: priors["top3"].get(int(c), 0.5))
+        df["res_win"] = df["win"] - df["course"].map(lambda c: priors["win"].get(int(c), 1 / 6))
+    return df
 
 
 def course_priors(df: pd.DataFrame) -> dict:
@@ -141,6 +180,29 @@ def _finish(df: pd.DataFrame, priors: dict) -> pd.DataFrame:
     # --- レース内の相対値
     for col, rel in (("nat_win", "nat_win_rel"), ("motor_2r", "motor_2r_rel"), ("r_st_mean", "r_st_rel")):
         df[rel] = df[col] - df.groupby("race_id")[col].transform("mean")
+    df["n30"] = df["n30"].fillna(0)
+    vn = df["venue_n"].fillna(0)
+    df["venue_res_s"] = df["venue_res"].fillna(0) * vn / (vn + 15)  # 少ないサンプルは0に寄せる
+    df["form_rel"] = df["form90_top3"] - df.groupby("race_id")["form90_top3"].transform("mean")
+    # --- 隣の艇（進入コース±1）と1コースの艇の値
+    keyed = df.set_index([df["race_id"], df["course"]])
+
+    def at(col, course):
+        v = keyed[col]
+        v = v[~v.index.duplicated()]
+        return v.reindex(pd.MultiIndex.from_arrays([df["race_id"], course])).to_numpy()
+    for col in ("r_st_mean", "r_course_win", "st_course", "nat_win", "form90_top3"):
+        df[f"in_{col}"] = at(col, df["course"] - 1)
+        df[f"out_{col}"] = at(col, df["course"] + 1)
+    df["st_vs_in"] = df["st_course"] - df["in_st_course"]
+    df["st_vs_out"] = df["st_course"] - df["out_st_course"]
+    one = pd.Series(1, index=df.index)
+    df["c1_course_win"] = at("r_course_win", one)
+    df["c1_st"] = at("st_course", one)
+    for col in ("r_course_win", "form90_top3"):
+        df[f"rank_{col}"] = df.groupby("race_id")[col].rank(ascending=False, method="average")
+    ex = df["ex_time"].where(df["ex_time"] > 0)
+    df["rank_ex_time"] = ex.groupby(df["race_id"]).rank(ascending=False, method="average")
     return df
 
 
@@ -156,6 +218,12 @@ def _basic(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[df["boat_2r"] <= 0, "boat_2r"] = np.nan
     df["meet_mean"] = df["meet_results"].map(_meet_mean)
     df["race_kind"] = df["race_name"].map(_race_kind)
+    df["jcd_num"] = pd.to_numeric(df["jcd"], errors="coerce")
+    df["hour"] = (pd.to_numeric(df["deadline"].astype(str).str.split(":").str[0], errors="coerce")
+                  if "deadline" in df else np.nan)
+    df["meet_n"] = df["meet_results"].map(lambda s: sum(c in "123456" for c in str(s)))
+    df["meet_last"] = df["meet_results"].map(
+        lambda s: next((float(c) for c in reversed(str(s)) if c in "123456"), np.nan))
     # --- 展示タイム（レース内の差・順位）
     ex = df["ex_time"].where(df["ex_time"] > 0)
     df["ex_time_diff"] = ex - ex.groupby(df["race_id"]).transform("mean")
@@ -170,13 +238,22 @@ def _basic(df: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- 本番（当日のレース）用
 
-def snapshot(hist: pd.DataFrame, asof: str) -> dict:
+def snapshot(hist: pd.DataFrame, asof: str, priors: dict) -> dict:
     """asof 日の朝時点の過去成績集計。add_features の rolling(closed='left') と同じ定義"""
     t = pd.Timestamp(asof)
-    h = _basic(hist[(hist["date"] < t) & (hist["date"] >= t - pd.Timedelta("365D"))])
+    h730 = _residuals(_basic(hist[(hist["date"] < t) & (hist["date"] >= t - pd.Timedelta("730D"))]), priors)
+    h = h730[h730["date"] >= t - pd.Timedelta("365D")]
     h180 = h[h["date"] >= t - pd.Timedelta("180D")]
+    h90 = h[h["date"] >= t - pd.Timedelta("90D")]
     h60 = h[h["date"] >= t - pd.Timedelta("60D")]
+    h30 = h[h["date"] >= t - pd.Timedelta("30D")]
     return {
+        "f90": h90.groupby("toban").agg(form90_top3=("res_top3", "mean"), form90_win=("res_win", "mean")),
+        "f30": h30.groupby("toban").agg(form30_top3=("res_top3", "mean"), n30=("one", "sum")),
+        "f365": h.groupby("toban").agg(form365_top3=("res_top3", "mean")),
+        "stc": h.groupby(["toban", "course"]).agg(st_course=("st", "mean")),
+        "sts": h180.groupby("toban").agg(st_std=("st", "std")),
+        "ven": h730.groupby(["toban", "jcd"]).agg(venue_res=("res_top3", "mean"), venue_n=("one", "sum")),
         "rc": h.groupby(["toban", "course"]).agg(rc_win=("win", "sum"), rc_top3=("top3", "sum"), rc_n=("one", "sum")),
         "rr": h180.groupby("toban").agg(r_st_mean=("st", "mean"), r_f_180=("is_f", "sum")),
         "r60": h60.groupby("toban").agg(r_finish_60=("finish_f", "mean")),
@@ -190,6 +267,9 @@ def live_features(race: pd.DataFrame, snap: dict, priors: dict) -> pd.DataFrame:
     df = _basic(race)
     df = df.join(snap["rc"], on=["toban", "course"]).join(snap["rr"], on="toban")
     df = df.join(snap["r60"], on="toban").join(snap["r365"], on="toban").join(snap["vc"], on=["jcd", "course"])
+    df = df.join(snap["f90"], on="toban").join(snap["f30"], on="toban").join(snap["f365"], on="toban")
+    df = df.join(snap["stc"], on=["toban", "course"]).join(snap["sts"], on="toban")
+    df = df.join(snap["ven"], on=["toban", "jcd"])
     df = _finish(df, priors)
     df[FEATURES] = df[FEATURES].apply(pd.to_numeric, errors="coerce")
     return df
@@ -206,6 +286,7 @@ def race_frame(info, hd: str) -> pd.DataFrame:
             "loc_2r": b.loc_2r or 0.0, "motor_2r": b.motor_2r or 0.0, "boat_2r": b.boat_2r or 0.0,
             "meet_results": b.meet_results, "ex_time": b.ex_time if b.ex_time else np.nan,
             "course": b.course if b.course else b.waku, "wind": info.wind, "wave": info.wave,
+            "deadline": info.deadlines.get(info.rno, ""),
         })
     return pd.DataFrame(rows)
 
@@ -225,7 +306,7 @@ class LivePredictor:
             return
         if self.hist is None or self.hist["date"].max() < pd.Timestamp(hd) - pd.Timedelta("1D"):
             self.hist = load_history()
-        self.snap = snapshot(self.hist, hd)
+        self.snap = snapshot(self.hist, hd, self.priors)
         self.snap_day = hd
 
     def trifecta(self, info, hd: str) -> dict[str, float]:
@@ -280,6 +361,26 @@ def top3_loglik(S: np.ndarray, Y: np.ndarray, temps) -> float:
     return float(np.mean(l1 + l2 + l3))
 
 
+def pl_objective(Y: np.ndarray, temps=PL_TEMPS):
+    """LightGBM 用の目的関数：1〜3着の Plackett-Luce 負の対数尤度の勾配と（対角の）ヘッセ行列。
+    データは race_id・waku 順に1レース6行で並んでいること"""
+    def f(preds, _ds):
+        S = preds.reshape(-1, 6)
+        i = np.arange(len(S))
+        grad, hess = np.zeros_like(S), np.zeros_like(S)
+        alive = np.ones_like(S, dtype=bool)
+        for k, t in enumerate(temps):
+            z = np.where(alive, t * S, -np.inf)
+            p = np.exp(z - z.max(1, keepdims=True))
+            p /= p.sum(1, keepdims=True)
+            grad += t * p
+            grad[i, Y[:, k]] -= t
+            hess += t * t * p * (1 - p)
+            alive[i, Y[:, k]] = False
+        return grad.ravel(), np.maximum(hess.ravel(), 1e-6)
+    return f
+
+
 def fit_temps(S: np.ndarray, Y: np.ndarray) -> tuple[float, float, float]:
     from scipy.optimize import minimize
     res = minimize(lambda t: -top3_loglik(S, Y, t), x0=[1.0, 1.0, 1.0], method="Nelder-Mead")
@@ -300,28 +401,35 @@ def to_matrix(df: pd.DataFrame, scores: np.ndarray):
 def train() -> None:
     import lightgbm as lgb
     print("特徴量を作成中…", flush=True)
-    df = clean_races(add_features(load_history()))
+    hist = add_features(load_history())
+    priors = course_priors(hist)
+    df = clean_races(hist)
     df = df[df["hd"] >= TRAIN_START]
-    df["label"] = (7 - df["finish"]).clip(lower=0).fillna(0).astype(int)  # 1着=6 … 6着=1
     tr = df[df["hd"] <= TRAIN_END].sort_values(["race_id", "waku"])
     va = df[(df["hd"] > TRAIN_END) & (df["hd"] <= VALID_END)].sort_values(["race_id", "waku"])
     print(f"学習 {tr['race_id'].nunique()} R / 検証 {va['race_id'].nunique()} R", flush=True)
-    params = dict(objective="lambdarank", metric="ndcg", ndcg_eval_at=[1, 3], learning_rate=0.05,
+    _, _, Ytr = to_matrix(tr, np.zeros(len(tr)))
+    _, _, Yva = to_matrix(va, np.zeros(len(va)))
+    params = dict(objective=pl_objective(Ytr), metric="None", learning_rate=0.05,
                   num_leaves=31, min_data_in_leaf=200, feature_fraction=0.8, bagging_fraction=0.8,
-                  bagging_freq=1, lambdarank_truncation_level=6, verbose=-1)
-    dtr = lgb.Dataset(tr[FEATURES], tr["label"], group=tr.groupby("race_id", sort=False).size().to_numpy())
-    dva = lgb.Dataset(va[FEATURES], va["label"], group=va.groupby("race_id", sort=False).size().to_numpy())
-    booster = lgb.train(params, dtr, 3000, valid_sets=[dva],
-                        callbacks=[lgb.early_stopping(100), lgb.log_evaluation(200)])
-    _, S, Y = to_matrix(va, booster.predict(va[FEATURES]))
+                  bagging_freq=1, verbose=-1, seed=0)
+    dtr = lgb.Dataset(tr[FEATURES], free_raw_data=False)
+    dva = lgb.Dataset(va[FEATURES], reference=dtr)
+
+    def feval(preds, _ds):
+        return "pl_loglik", top3_loglik(preds.reshape(-1, 6), Yva, PL_TEMPS), True
+    booster = lgb.train(params, dtr, 5000, valid_sets=[dva], feval=feval,
+                        callbacks=[lgb.early_stopping(150), lgb.log_evaluation(200)])
+    _, S, Y = to_matrix(va, booster.predict(va[FEATURES], num_iteration=booster.best_iteration))
     temps = fit_temps(S, Y)
     print(f"温度 {temps}  検証の対数尤度 {top3_loglik(S, Y, temps):.4f}", flush=True)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    booster.save_model(str(MODEL_DIR / "lgb.txt"))
+    booster.save_model(str(MODEL_DIR / "lgb.txt"), num_iteration=booster.best_iteration)
     imp = dict(zip(FEATURES, booster.feature_importance("gain").round(1).tolist()))
-    (MODEL_DIR / "meta.json").write_text(json.dumps(
+    (MODEL_DIR / "meta.json").write_text(encoding="utf-8", data=json.dumps(
         {"temps": temps, "features": FEATURES, "train_end": TRAIN_END, "valid_end": VALID_END,
-         "best_iteration": booster.best_iteration, "importance": imp, "priors": course_priors(df)}, ensure_ascii=False, indent=1))
+         "objective": "plackett_luce", "best_iteration": booster.best_iteration, "importance": imp,
+         "priors": priors}, ensure_ascii=False, indent=1))
     print("保存しました", MODEL_DIR)
 
 
@@ -330,11 +438,13 @@ class Model:
         import lightgbm as lgb
         model_dir = model_dir or MODEL_DIR
         self.booster = lgb.Booster(model_file=str(model_dir / "lgb.txt"))
-        self.meta = json.loads((model_dir / "meta.json").read_text())
+        self.meta = json.loads((model_dir / "meta.json").read_text(encoding="utf-8"))
+        # JSON ではキーが文字列になるので、コース番号(int)に戻す（戻さないと本番で事前値が使われない）
+        self.meta["priors"] = {k: {int(c): v for c, v in d.items()} for k, d in self.meta["priors"].items()}
         self.temps = tuple(self.meta["temps"])
 
     def scores(self, df: pd.DataFrame) -> np.ndarray:
-        return self.booster.predict(df[FEATURES])
+        return self.booster.predict(df[self.meta["features"]])
 
     def trifecta(self, race_df: pd.DataFrame) -> dict[str, float]:
         """1レース6艇（waku順）→ {'1-2-3': 確率}"""
