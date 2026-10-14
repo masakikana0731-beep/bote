@@ -51,6 +51,9 @@ class Boat:
     age: int | None = None
     weight: float | None = None
     meet_results: str = ""         # 今節成績（着順を空白区切り）
+    motor_no: int | None = None
+    boat_no: int | None = None
+    before: dict = field(default_factory=dict)  # 直前情報の全項目（parse_beforeinfo_full の boats[枠]）
 
 
 @dataclass
@@ -63,6 +66,7 @@ class RaceInfo:
     race_name: str = ""
     wind: float | None = None
     wave: float | None = None
+    weather: dict = field(default_factory=dict)  # 直前情報の気象（parse_beforeinfo_full の weather）
 
 
 # ---------------------------------------------------------------- HTTP
@@ -166,6 +170,8 @@ def parse_racelist(html: str) -> list[Boat]:
             b.meet_results = " ".join(
                 t for t in (td.get_text(strip=True).translate(_ZEN) for td in trs[3].find_all("td")) if t.isdigit())
         b.motor_2r = _num(mot[1]) if len(mot) > 1 else None
+        b.motor_no = int(_num(mot[0])) if mot and _num(mot[0]) is not None else None
+        b.boat_no = int(_num(bt[0])) if bt and _num(bt[0]) is not None else None
         b.boat_2r = _num(bt[1]) if len(bt) > 1 else None
         boats.append(b)
     return sorted(boats, key=lambda x: x.waku)
@@ -211,6 +217,73 @@ def parse_weather(html: str) -> dict:
         if el:
             out[key] = _num(el.get_text())
     return out
+
+
+def parse_beforeinfo_full(html: str) -> dict:
+    """直前情報をすべて取り出す（過去データの収集と本番で共通に使う）。
+
+    {"boats": {枠: {ex_weight, adj_weight, ex_time, tilt, propeller, parts, ex_course, ex_st}},
+     "weather": {temp, weather, wind, wind_dir, water_temp, wave, course_dir}}
+    wind_dir / course_dir は公式サイトの画像の番号（1〜16 の方位。風がない・不明は None）
+    """
+    s = _soup(html)
+    boats: dict[int, dict] = {}
+    for tb in s.select("div.table1 table.is-w748 tbody"):
+        rows = tb.find_all("tr")
+        tds = rows[0].find_all("td") if rows else []
+        if len(tds) < 8:
+            continue
+        waku = _num(tds[0].get_text())
+        if waku is None:
+            continue
+        parts = tds[7].select("li") or [tds[7]]
+        adj = rows[2].find_all("td") if len(rows) > 2 else []
+        boats[int(waku)] = {
+            "ex_weight": _num(tds[3].get_text()),
+            "adj_weight": _num(adj[0].get_text()) if adj else None,
+            "ex_time": _num(tds[4].get_text()),
+            "tilt": _num(tds[5].get_text()),
+            "propeller": tds[6].get_text(strip=True),
+            "parts": "/".join(t for t in (p.get_text(" ", strip=True) for p in parts) if t),
+        }
+    for course, div in enumerate(s.select("div.table1_boatImage1"), start=1):
+        n = div.select_one(".table1_boatImage1Number")
+        t = div.select_one(".table1_boatImage1Time")
+        if not n or _num(n.get_text()) is None:
+            continue
+        st_text = t.get_text(strip=True) if t else ""
+        st = _num(st_text.replace("F", "").replace("L", ""))
+        if st is not None and st_text.startswith("F"):
+            st = -st
+        boats.setdefault(int(_num(n.get_text())), {}).update({"ex_course": course, "ex_st": st, "ex_st_raw": st_text})
+
+    def unit(cls: str):
+        return s.select_one(f"div.weather1_bodyUnit.{cls}")
+
+    def label(cls: str):
+        u = unit(cls)
+        el = u.select_one(".weather1_bodyUnitLabelData") if u else None
+        return el.get_text(strip=True) if el else None
+
+    def image_no(cls: str, prefix: str):
+        u = unit(cls)
+        img = u.select_one(".weather1_bodyUnitImage") if u else None
+        for c in (img.get("class") or []) if img else []:
+            m = re.fullmatch(prefix + r"(\d+)", c)
+            if m:
+                return int(m.group(1))
+        return None
+    w = unit("is-weather")
+    weather = {
+        "temp": _num(label("is-direction") or ""),
+        "weather": w.get_text(strip=True) if w else None,
+        "wind": _num(label("is-wind") or ""),
+        "wind_dir": image_no("is-windDirection", "is-wind"),
+        "water_temp": _num(label("is-waterTemperature") or ""),
+        "wave": _num(label("is-wave") or ""),
+        "course_dir": image_no("is-direction", "is-direction"),
+    }
+    return {"boats": boats, "weather": weather}
 
 
 def parse_odds3t(html: str) -> dict[str, float]:
@@ -343,6 +416,10 @@ class BoatraceClient:
         for b in info.boats:
             for k, v in before.get(b.waku, {}).items():
                 setattr(b, k, v)
+        full = parse_beforeinfo_full(bhtml)
+        info.weather = full["weather"]
+        for b in info.boats:
+            b.before = full["boats"].get(b.waku, {})
         return info
 
     def odds3t(self, jcd: str, rno: int, hd: str) -> dict[str, float]:

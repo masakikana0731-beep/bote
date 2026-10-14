@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from boatbot.scraper import (parse_beforeinfo, parse_deadlines, parse_index, parse_odds3t,
+from boatbot.scraper import (parse_beforeinfo, parse_beforeinfo_full, parse_deadlines, parse_index, parse_odds3t,
                              parse_racelist, parse_result)
 
 FX = Path(__file__).parent / "fixtures"
 
 
 def html(name):
-    return (FX / f"{name}.html").read_text()
+    return (FX / f"{name}.html").read_text(encoding="utf-8")
 
 
 def test_index():
@@ -26,6 +26,7 @@ def test_racelist():
     b1 = boats[0]
     assert b1.toban == "4303" and b1.grade == "B1" and b1.nat_win == 4.84 and b1.motor_2r == 37.8
     assert boats[2].f_count == 1
+    assert b1.motor_no == 45 and b1.boat_no == 29
 
 
 def test_beforeinfo():
@@ -33,6 +34,14 @@ def test_beforeinfo():
     assert bi[1]["ex_time"] == 6.85
     assert bi[1]["course"] == 1 and bi[1]["ex_st"] == -0.03  # F.03
     assert bi[3]["ex_st"] == 0.17
+
+
+def test_beforeinfo_full():
+    d = parse_beforeinfo_full(html("beforeinfo"))
+    b1 = d["boats"][1]
+    assert b1["ex_weight"] == 52.2 and b1["adj_weight"] == 0.0 and b1["ex_time"] == 6.85 and b1["tilt"] == -0.5
+    assert b1["ex_course"] == 1 and b1["ex_st"] == -0.03 and b1["ex_st_raw"] == "F.03"
+    assert d["boats"][6]["tilt"] == 0.0 and len(d["boats"]) == 6
 
 
 def test_odds3t():
