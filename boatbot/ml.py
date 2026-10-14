@@ -66,6 +66,9 @@ FEATURES = [
     "st_vs_in", "st_vs_out", "c1_course_win", "c1_st",
     # レース内の順位・相対値
     "rank_r_course_win", "rank_form90_top3", "rank_ex_time", "form_rel",
+    # モーター・ボート（場×番号ごとの最近の成績。コース補正後）と展示タイムの「いつもとの差」
+    "motor_res_s", "motor_n", "motor_res30_s", "boat_res_s", "motor_exd_s", "ex_vs_motor", "ex_vs_racer",
+    "racer_exd", "motor_rel", "rank_motor",
 ]
 PL_TEMPS = (1.0, 0.75, 0.55)  # 学習時の段階ごとの温度（学習後に検証期間で改めて推定する）
 
@@ -147,6 +150,16 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["form365_top3"] = f365["res_top3_mean_365D"]
     df["st_course"], df["st_std"] = stc["st_mean_365D"], sts["st_std_180D"]
     df["venue_res"], df["venue_n"] = ven["res_top3_mean_730D"], ven["one_sum_730D"]
+    m = df["motor_no"].notna()
+    mo = _rolling_by(df[m], ["jcd", "motor_no"], {"res_top3": "mean", "one": "sum", "ex_time_diff": "mean"}, "90D")
+    mo30 = _rolling_by(df[m], ["jcd", "motor_no"], {"res_top3": "mean", "one": "sum"}, "30D")
+    df.loc[m, "motor_res"], df.loc[m, "motor_n"] = mo["res_top3_mean_90D"], mo["one_sum_90D"]
+    df.loc[m, "motor_exd"] = mo["ex_time_diff_mean_90D"]
+    df.loc[m, "motor_res30"], df.loc[m, "motor_n30"] = mo30["res_top3_mean_30D"], mo30["one_sum_30D"]
+    b = df["boat_no"].notna()
+    bo = _rolling_by(df[b], ["jcd", "boat_no"], {"res_top3": "mean", "one": "sum"}, "90D")
+    df.loc[b, "boat_res"], df.loc[b, "boat_n"] = bo["res_top3_mean_90D"], bo["one_sum_90D"]
+    df["racer_exd"] = _rolling_by(df, ["toban"], {"ex_time_diff": "mean"}, "90D")["ex_time_diff_mean_90D"]
     return _finish(df, priors)
 
 
@@ -184,6 +197,19 @@ def _finish(df: pd.DataFrame, priors: dict) -> pd.DataFrame:
     vn = df["venue_n"].fillna(0)
     df["venue_res_s"] = df["venue_res"].fillna(0) * vn / (vn + 15)  # 少ないサンプルは0に寄せる
     df["form_rel"] = df["form90_top3"] - df.groupby("race_id")["form90_top3"].transform("mean")
+    # --- モーター・ボート（少ないサンプルは0に寄せる）
+    def shrink(v, n, k):
+        n = df[n].fillna(0) if n in df else 0
+        return df[v].fillna(0) * n / (n + k) if v in df else np.nan
+    df["motor_n"] = df["motor_n"].fillna(0) if "motor_n" in df else 0.0
+    df["motor_res_s"] = shrink("motor_res", "motor_n", 20)
+    df["motor_res30_s"] = shrink("motor_res30", "motor_n30", 10)
+    df["boat_res_s"] = shrink("boat_res", "boat_n", 20)
+    df["motor_exd_s"] = shrink("motor_exd", "motor_n", 20)
+    df["ex_vs_motor"] = df["ex_time_diff"] - df["motor_exd_s"]  # 今日の展示がそのモーターのいつもより速いか
+    df["ex_vs_racer"] = df["ex_time_diff"] - df["racer_exd"]    # 今日の展示がその選手のいつもより速いか
+    df["motor_rel"] = df["motor_res_s"] - df.groupby("race_id")["motor_res_s"].transform("mean")
+    df["rank_motor"] = df.groupby("race_id")["motor_res_s"].rank(ascending=False, method="average")
     # --- 隣の艇（進入コース±1）と1コースの艇の値
     keyed = df.set_index([df["race_id"], df["course"]])
 
@@ -254,6 +280,11 @@ def snapshot(hist: pd.DataFrame, asof: str, priors: dict) -> dict:
         "stc": h.groupby(["toban", "course"]).agg(st_course=("st", "mean")),
         "sts": h180.groupby("toban").agg(st_std=("st", "std")),
         "ven": h730.groupby(["toban", "jcd"]).agg(venue_res=("res_top3", "mean"), venue_n=("one", "sum")),
+        "mo": h90.groupby(["jcd", "motor_no"]).agg(motor_res=("res_top3", "mean"), motor_n=("one", "sum"),
+                                                   motor_exd=("ex_time_diff", "mean")),
+        "mo30": h30.groupby(["jcd", "motor_no"]).agg(motor_res30=("res_top3", "mean"), motor_n30=("one", "sum")),
+        "bo": h90.groupby(["jcd", "boat_no"]).agg(boat_res=("res_top3", "mean"), boat_n=("one", "sum")),
+        "rex": h90.groupby("toban").agg(racer_exd=("ex_time_diff", "mean")),
         "rc": h.groupby(["toban", "course"]).agg(rc_win=("win", "sum"), rc_top3=("top3", "sum"), rc_n=("one", "sum")),
         "rr": h180.groupby("toban").agg(r_st_mean=("st", "mean"), r_f_180=("is_f", "sum")),
         "r60": h60.groupby("toban").agg(r_finish_60=("finish_f", "mean")),
@@ -270,6 +301,10 @@ def live_features(race: pd.DataFrame, snap: dict, priors: dict) -> pd.DataFrame:
     df = df.join(snap["f90"], on="toban").join(snap["f30"], on="toban").join(snap["f365"], on="toban")
     df = df.join(snap["stc"], on=["toban", "course"]).join(snap["sts"], on="toban")
     df = df.join(snap["ven"], on=["toban", "jcd"])
+    df["motor_no"] = pd.to_numeric(df["motor_no"], errors="coerce").astype(float)
+    df["boat_no"] = pd.to_numeric(df["boat_no"], errors="coerce").astype(float)
+    df = df.join(snap["mo"], on=["jcd", "motor_no"]).join(snap["mo30"], on=["jcd", "motor_no"])
+    df = df.join(snap["bo"], on=["jcd", "boat_no"]).join(snap["rex"], on="toban")
     df = _finish(df, priors)
     df[FEATURES] = df[FEATURES].apply(pd.to_numeric, errors="coerce")
     return df
@@ -287,6 +322,7 @@ def race_frame(info, hd: str) -> pd.DataFrame:
             "meet_results": b.meet_results, "ex_time": b.ex_time if b.ex_time else np.nan,
             "course": b.course if b.course else b.waku, "wind": info.wind, "wave": info.wave,
             "deadline": info.deadlines.get(info.rno, ""),
+            "motor_no": b.motor_no, "boat_no": b.boat_no,
         })
     return pd.DataFrame(rows)
 
