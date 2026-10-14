@@ -5,7 +5,7 @@
 
 - リポジトリ: `masakikana0731-beep/bote`
 - 作業ブランチ: `claude/boat-racing-auto-invest-74mg7w`（main への PR は未作成）
-- 最終更新: 2026-10-13（クラウドセッションで作成）
+- 最終更新: 2026-10-14（自宅PC `C:/Users/masak/claude/BOTE` で全券種の最適化まで完了）
 
 ---
 
@@ -51,7 +51,13 @@
 - これらは設定画面のプリセットボタンとして実装済み
 - 全券種の試運転（283R）では「完全ランダムに買う」でも回収147%が出た → 少数レースの結果は運に大きく左右される
 
-## 4. データの引き継ぎ（作業は自宅PCに一本化。クラウド側の取得は停止済み）
+## 4. 全券種オッズの取得（2026-10-14 自宅PCで完了）
+
+- 3連単・全券種とも 3,240/3,240 取得済み（`data/` は git 管理外。自宅PCにだけある）
+- 全券種の最適化結果は `docs/model.md` 6b と `docs/results/opt2_report.json`
+- 自宅PC(Windows)の注意：Python 3.12 の venv（3.14 は lhafile が入らない）、`PYTHONUTF8=1` が必要、`.gitattributes` でモデルの改行変換を止めた
+
+### （参考）クラウドで取得したオッズのスナップショット（自宅PCでは不要になった）
 
 クラウドで取得したオッズを `data_snapshot/odds_20260715-20261012.tar.gz`（2MB）に入れてある。
 - `data/odds/`：3連単の確定オッズ **3,240レース（全件）**
@@ -69,8 +75,8 @@ python -m boatbot.backtest fetch-odds-multi --workers 4   # 残り約2,360レー
 
 ## 5. 次にやること（未完了タスク）
 
-1. **全券種オッズの取得を完了**（上記）
-2. **全券種での最適化**
+1. ~~全券種オッズの取得~~（完了）
+2. ~~全券種での最適化~~（完了。単勝・複勝・拡連複が良く見えるが確定オッズによる偏りの疑い → `docs/model.md` 6b）
    ```bash
    python -m boatbot.optimize2 prepare
    python -m boatbot.optimize2 search --n 20000 --jobs 4     # data/opt2_results.json

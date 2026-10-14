@@ -268,10 +268,97 @@ def search(n: int, seed: int, jobs: int, out: Path) -> None:
     print(f"保存しました {out}（{len(res)}件）")
 
 
+# ---------------------------------------------------------------- 報告
+
+OBJECTIVES = {
+    # 名前: (説明, 前半での条件, 前半での並べ替えキー)
+    "回収率重視": ("回収率が最大", lambda r: r["races"] >= 100, lambda r: r["roi"]),
+    "当たる楽しさ": ("的中率25%以上の中で回収率最大", lambda r: r["races"] >= 100 and r["hit"] >= 0.25, lambda r: r["roi"]),
+    "一発狙い": ("的中率5〜15%の中で回収率最大", lambda r: r["races"] >= 100 and 0.05 <= r["hit"] < 0.15, lambda r: r["roi"]),
+}
+
+
+def bootstrap(bets, n: int = 5000, seed: int = 0) -> dict:
+    """日単位でリサンプリングした回収率の90%区間とプラスになる確率"""
+    days: dict = {}
+    for d, b, r, _ in bets:
+        x = days.setdefault(d, [0, 0])
+        x[0] += b
+        x[1] += r
+    arr = np.array(list(days.values()), dtype=float)
+    if len(arr) == 0:
+        return {"lo": 0.0, "hi": 0.0, "p_plus": 0.0}
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(arr), size=(n, len(arr)))
+    s = arr[idx].sum(axis=1)
+    roi = s[:, 1] / np.maximum(s[:, 0], 1)
+    return {"lo": float(np.percentile(roi, 5)), "hi": float(np.percentile(roi, 95)),
+            "p_plus": float((roi > 1).mean())}
+
+
+def _verify(d: dict, s: Strategy, second: np.ndarray) -> dict:
+    v = simulate(d, s, second, with_bets=True)
+    bets = v.pop("bets")
+    v["boot"] = bootstrap(bets)
+    v["roi_wo_top2"] = (v["ret"] - sum(b[2] for b in sorted(bets, key=lambda b: -b[2])[:2])) / v["bet"] if v["bet"] else 0
+    return v
+
+
+def report(results_path: Path, out: Path, top_k: int = 20) -> None:
+    d = dict(np.load(PREP))
+    first = d["hd"] <= SPLIT
+    second = ~first
+    res = json.loads(results_path.read_text())
+    rep = {"split": SPLIT, "n": len(res), "explore_races": int(first.sum()),
+           "verify_races": int(second.sum()), "objectives": {}, "by_type": {}, "baselines": {}}
+    for name, (desc, cond, key) in OBJECTIVES.items():
+        ok = sorted((r for r in res if cond(r[1])), key=lambda r: -key(r[1]))
+        top = ok[:top_k]
+        best = top[0]
+        rep["objectives"][name] = {
+            "desc": desc, "params": best[0], "explore": best[1],
+            "verify": _verify(d, Strategy(**best[0]), second),
+            # 前半の上位 top_k 件が後半でどうだったか（選択バイアスの目安）
+            "topk_verify_roi_mean": float(np.mean([r[2]["roi"] for r in top])),
+            "topk_explore_roi_mean": float(np.mean([r[1]["roi"] for r in top])),
+        }
+    for t in list(COMBOS) + ["all"]:
+        ok = sorted((r for r in res if r[0]["bet_type"] == t and r[1]["races"] >= 100), key=lambda r: -r[1]["roi"])
+        if not ok:
+            continue
+        best = ok[0]
+        rep["by_type"][t] = {"params": best[0], "explore": best[1],
+                             "verify": _verify(d, Strategy(**best[0]), second),
+                             "all_verify_roi_mean": float(np.mean([r[2]["roi"] for r in ok]))}
+    rb = [random_baseline(d, second, seed) for seed in range(20)]
+    rep["baselines"]["random"] = {"verify_roi_mean": float(np.mean([r["roi"] for r in rb])),
+                                  "verify_roi_min": float(min(r["roi"] for r in rb)),
+                                  "verify_roi_max": float(max(r["roi"] for r in rb)),
+                                  "verify_hit_mean": float(np.mean([r["hit"] for r in rb]))}
+    for t in COMBOS:
+        rep["baselines"][f"market_{t}"] = _verify(d, Strategy(bet_type=t, crowd=1.0, gamble=0, tickets=3), second)
+    rep["baselines"]["default"] = _verify(d, Strategy(), second)
+    # パラメータごとの効き方（後半・全候補の平均回収率）
+    eff = {}
+    for field in ("bet_type", "gamble", "sigma", "tickets", "min_ev", "crowd", "staking", "unit",
+                  "race_budget", "skip_fav", "max_wind"):
+        vals: dict = {}
+        for p, _, v in res:
+            if v["races"] >= 50:
+                vals.setdefault(p[field], []).append(v["roi"])
+        eff[field] = {str(k): round(float(np.mean(x)), 3) for k, x in sorted(vals.items(), key=lambda kv: str(kv[0]))}
+    rep["param_effect_verify"] = eff
+    out.write_text(json.dumps(rep, ensure_ascii=False, indent=1))
+    print(f"保存しました {out}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("prepare")
+    rp = sub.add_parser("report")
+    rp.add_argument("--results", default="data/opt2_results.json")
+    rp.add_argument("--out", default="docs/results/opt2_report.json")
     s = sub.add_parser("search")
     s.add_argument("--n", type=int, default=20000)
     s.add_argument("--seed", type=int, default=0)
@@ -280,6 +367,8 @@ def main() -> int:
     a = ap.parse_args()
     if a.cmd == "prepare":
         prepare()
+    elif a.cmd == "report":
+        report(Path(a.results), Path(a.out))
     else:
         search(a.n, a.seed, a.jobs, Path(a.out))
     return 0
