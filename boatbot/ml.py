@@ -120,6 +120,12 @@ def load_history() -> pd.DataFrame:
         b = b.rename(columns={c: f"bi_{c}" for c in b.columns if c not in ("hd", "jcd", "rno", "waku")})
         df = df.merge(b[["hd", "jcd", "rno", "waku"] + [c for c in BI_COLS if c in b]],
                       on=["hd", "jcd", "rno", "waku"], how="left")
+        # 進入コースは「スタート展示の進入」を使う（本番で予想するときに分かるのはこちら）。
+        # 競走成績の進入はレース後に分かる値で、展示と違う艇が約5%（レースの約12%）ある。
+        # これを使うと評価が良く見えすぎる（2026-10-15 に確認）。展示データが無いレースは競走成績の進入のまま
+        exc = pd.to_numeric(df["bi_ex_course"], errors="coerce")
+        df["course_actual"] = df["course"]
+        df["course"] = exc.where(exc.between(1, 6), df["course"]).astype(int)
     df = df.sort_values(["date", "race_id", "waku"]).reset_index(drop=True)
     return df
 

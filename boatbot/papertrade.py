@@ -8,7 +8,7 @@
   python -m boatbot.papertrade --no-update  # 過去データの更新をしない
 
 買い方（検証中の仮説）:
-  確率 = 学習モデル^W_MODEL × 市場(1/オッズ)^W_MARKET を正規化（2026/7/25〜8/31 の確定オッズで推定した重み）
+  確率 = 学習モデル^W_MODEL × 市場(1/オッズ)^W_MARKET を正規化
   期待値 = 確率 × オッズ が閾値以上の3連単を、1レース最大5点・100円ずつ。1日3,000円・最大10レース
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ from .collect import ODDS, ODDS_LIVE, before_path
 from .scraper import Fetcher, parse_beforeinfo_full, parse_odds3t
 
 TRI = [f"{a}-{b}-{c}" for a, b, c in permutations(range(1, 7), 3)]
-W_MODEL, W_MARKET = 0.19, 0.869
+W_MODEL, W_MARKET = 0.12, 0.929  # 展示の進入コースで予想し、2026/7/25〜8/31 の確定オッズで推定
 THRESHOLDS = (0.9, 1.0, 1.1)
 PER_RACE, DAILY, MAX_RACES = 5, 3000, 10
 OUT = Path("data/papertrade")
