@@ -75,6 +75,12 @@ class Fetcher:
     def __init__(self, session: requests.Session | None = None):
         self.s = session or requests.Session()
         self.s.headers["User-Agent"] = UA
+        if session is None:
+            # 長く使わなかった接続をサーバーが切っていることがあるので、接続エラーは少し待って2回までやり直す
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            retry = Retry(total=2, connect=2, read=1, status=0, backoff_factor=2, allowed_methods=["GET"])
+            self.s.mount("https://", HTTPAdapter(max_retries=retry))
         self._last = 0.0
         self._lock = threading.Lock()
 
