@@ -138,16 +138,40 @@ def fetch_odds(start: str, end: str, workers: int) -> None:
 LEADS = (5, 1)  # 締切の何分前に記録するか
 
 
-def watch(interval: int = 20) -> None:
-    """当日の全レースについて、締切 LEADS 分前のオッズを記録する（止めるまで動き続ける）"""
+def _snap_odds(f: Fetcher, hd: str, jcd: str, rno: int, dl: datetime, lead: int) -> None:
+    """締切前のオッズ（3連単・単勝複勝・拡連複）を1回記録する。締切を過ぎたら記録しない"""
+    p = ODDS_LIVE / hd / f"{jcd}_{rno:02d}_m{lead}.json"
+    if datetime.now(JST) >= dl:
+        return
+    data = {"ts": datetime.now(JST).isoformat(), "deadline": dl.isoformat(), "lead": lead,
+            "tri": parse_odds3t(f.get("odds3t", rno=rno, jcd=jcd, hd=hd))}
+    wp = parse_win_place(f.get("oddstf", rno=rno, jcd=jcd, hd=hd))
+    data["win"], data["place"] = (wp[0] if wp else {}), (wp[1] if len(wp) > 1 else {})
+    wide = parse_odds_tables(f.get("oddsk", rno=rno, jcd=jcd, hd=hd))
+    data["wide"] = wide[0] if wide else {}
+    data["ts_end"] = datetime.now(JST).isoformat()
+    data["late"] = datetime.now(JST) >= dl  # 取り終わる前に締切を過ぎた（確定オッズに近い）
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data))
+
+
+def watch(interval: int = 10, workers: int = 4) -> None:
+    """当日の全レースについて、締切 LEADS 分前のオッズを記録する（止めるまで動き続ける）。
+
+    公式サイトの応答が遅い（1ページ数秒〜10秒）ので、締切が重なっても間に合うよう複数の接続で並行して取る
+    """
     client = BoatraceClient(Fetcher())
-    f = client.f
+    pool = ThreadPoolExecutor(max_workers=workers)
+    fetchers = [Fetcher() for _ in range(workers)]
+    submitted: dict = {}
     day, schedule, loaded = None, {}, None
     while True:
         now = datetime.now(JST)
         hd = now.strftime("%Y%m%d")
         # 日付が変わったとき・30分ごと（締切の変更に追従）・まだ空のときに日程を読み直す
         if hd != day or not schedule or now - loaded > timedelta(minutes=30):
+            if hd != day:
+                submitted = {}
             day, loaded = hd, now
             try:
                 new = {}
@@ -165,20 +189,13 @@ def watch(interval: int = 20) -> None:
                 continue
         for (jcd, rno), dl in sorted(schedule.items(), key=lambda x: x[1]):
             for lead in LEADS:
+                key = (hd, jcd, rno, lead)
                 p = ODDS_LIVE / hd / f"{jcd}_{rno:02d}_m{lead}.json"
-                if p.exists() or not (dl - timedelta(minutes=lead) <= now < dl):
+                if key in submitted or p.exists() or not (dl - timedelta(minutes=lead) <= now < dl):
                     continue
-                try:
-                    data = {"ts": datetime.now(JST).isoformat(), "deadline": dl.isoformat(), "lead": lead,
-                            "tri": parse_odds3t(f.get("odds3t", rno=rno, jcd=jcd, hd=hd))}
-                    wp = parse_win_place(f.get("oddstf", rno=rno, jcd=jcd, hd=hd))
-                    data["win"], data["place"] = (wp[0] if wp else {}), (wp[1] if len(wp) > 1 else {})
-                    wide = parse_odds_tables(f.get("oddsk", rno=rno, jcd=jcd, hd=hd))
-                    data["wide"] = wide[0] if wide else {}
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    p.write_text(json.dumps(data))
-                except Exception as e:
-                    print(f"  失敗 {hd} {jcd} {rno} {lead}分前: {e}", flush=True)
+                fu = pool.submit(_snap_odds, fetchers[len(submitted) % workers], hd, jcd, rno, dl, lead)
+                fu.add_done_callback(lambda x, k=key: x.exception() and print(f"  失敗 {k}: {x.exception()}", flush=True))
+                submitted[key] = fu
         time.sleep(interval)
 
 
