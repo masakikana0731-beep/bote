@@ -156,6 +156,20 @@ def _snap_odds(f: Fetcher, hd: str, jcd: str, rno: int, dl: datetime, lead: int)
 
 
 def watch(interval: int = 10, workers: int = 4) -> None:
+    """止まらないように、想定外のエラーは記録して1分後にやり直す"""
+    import faulthandler
+    import traceback
+    faulthandler.enable()
+    while True:
+        try:
+            _watch(interval, workers)
+        except Exception:
+            print(f"{datetime.now(JST):%H:%M:%S} 想定外のエラー（1分後に再開）", flush=True)
+            print(traceback.format_exc(), flush=True)
+            time.sleep(60)
+
+
+def _watch(interval: int, workers: int) -> None:
     """当日の全レースについて、締切 LEADS 分前のオッズを記録する（止めるまで動き続ける）。
 
     公式サイトの応答が遅い（1ページ数秒〜10秒）ので、締切が重なっても間に合うよう複数の接続で並行して取る
