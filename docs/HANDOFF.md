@@ -90,13 +90,26 @@ python -m boatbot.backtest fetch-odds-multi --workers 4   # 残り約2,360レー
 
 | 収集 | コマンド | 保存先 | 見込み |
 |---|---|---|---|
-| 直前情報（展示・チルト・部品交換・スタート展示・気象） | `collect before --start 20230701`（6接続）→ 終わると `scripts/collect_chain.ps1` が 2018年〜 を続けて取る | `data/before/` | 2023/7〜 約4日、2018〜 はさらに約6日 |
+| 直前情報（展示・チルト・部品交換・スタート展示・気象） | `collect before --start 20230701`（6接続）（2018年〜まで続けて取る） | `data/before/` | 2023/7〜 約4日、2018〜 はさらに約6日 |
 | 3連単確定オッズ（全レース） | `collect odds --start 20251014`（3接続）→ 続けて 2024/10〜2025/10 | `data/odds/` | 1年分 約2日 |
 | 締切5分前・1分前のオッズ（3連単・単勝複勝・拡連複） | `collect watch`（毎日） | `data/odds_live/` | 継続 |
 
 - 公式サイトの応答が1ページ約9秒と遅い。接続数を増やしすぎるとブロックの恐れ（本番の予想も止まる）
 - PCの再起動で止まる。再開は README/このメモのコマンドを実行（取得済みは飛ばす）
 - ログ: `logs/collect_*.log`
+
+### 収集の起動方法（2026-10-16 から）
+- Claude アプリから普通に起動したプロセスは、アプリの再起動で一緒に止まる（10/16 10:20 に全部止まっていた）
+- アプリの外の独立したプロセスとして起動する（PowerShell）:
+  ```powershell
+  $wd = "C:\Users\masak\claude\BOTE"
+  foreach ($a in @('watch', 'before --start 20180101 --workers 6', 'odds --start 20241014 --workers 3')) {
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wd\scripts\collect.ps1`" $a"; CurrentDirectory = $wd }
+  }
+  ```
+- この PC の Python は Claude アプリ（ストア版）の中で uv が入れたもので、アプリの外からは
+  `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\uv\python\...` にある。`scripts/collect.ps1` はこれを探して使う
+- PC を再起動したら上のコマンドで再開する（取得済みは飛ばす）
 
 ### 収集が終わったらやること
 1. `python -m boatbot.collect parse-before` → `data/before.parquet`（`ml.train` は before.parquet があれば直前情報の特徴量 BEFORE_FEATURES も使う）
