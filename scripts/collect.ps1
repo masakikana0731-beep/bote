@@ -19,4 +19,6 @@ if (-not (Test-Path (Join-Path $pyhome "python.exe")) -and $pyhome.StartsWith($e
 $env:PYTHONUTF8 = "1"
 $env:PYTHONPATH = "$wd;$wd\.venv\Lib\site-packages"
 $name = $args[0]
-& (Join-Path $pyhome "python.exe") -m boatbot.collect @args *>> (Join-Path $wd "logs\collect_$name.log")
+# ログは UTF-8 のまま追記する（PowerShell の *>> は UTF-16 になるので cmd のリダイレクトを使う）
+$py = Join-Path $pyhome "python.exe"
+cmd.exe /c "`"$py`" -m boatbot.collect $($args -join ' ') >> `"$wd\logs\collect_$name.log`" 2>&1"
