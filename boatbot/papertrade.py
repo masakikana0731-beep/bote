@@ -36,7 +36,7 @@ TRI = [f"{a}-{b}-{c}" for a, b, c in permutations(range(1, 7), 3)]
 W_MODEL, W_MARKET = 0.12, 0.929  # 展示の進入コースで予想し、2026/7/25〜8/31 の確定オッズで推定
 THRESHOLDS = (0.9, 1.0, 1.1)        # 3連単
 TYPE_THRESHOLDS = (1.0, 1.2, 1.5)   # 単勝・複勝・拡連複（確定オッズのシミュレーションで良く見えた条件）
-TYPE_NAMES = {"tri": "3連単", "win": "単勝", "place": "複勝", "wide": "拡連複"}
+TYPE_NAMES = {"tri": "3連単", "tri_open": "3連単(荒れ)", "win": "単勝", "place": "複勝", "wide": "拡連複"}
 PER_RACE, DAILY, MAX_RACES = 5, 3000, 10
 OUT = Path("data/papertrade")
 
@@ -160,6 +160,25 @@ def score_day(hist: pd.DataFrame, hd: str, fetch_final: bool = True) -> dict | N
                     if pick:
                         rows.append({**base, "type": "tri", "lead": lead, "src": src, "th": th,
                                      "picks": [TRI[j] for j in pick], "ev": [round(float(ev[j]), 3) for j in pick],
+                                     "odds_pre": [float(O[j]) for j in pick],
+                                     "odds_final": [float(fo[j]) for j in pick] if fo is not None else None,
+                                     "rets": [float(R[j]) for j in pick]})
+        # --- 3連単「荒れそうなレース」ルール（2026-10-16：7〜8月・9〜10月とも確定オッズで100%超えだった唯一の候補）
+        #     モデルの本命の1着確率 < 0.4 のレースだけ、モデル確率の上位5点のうち、オッズ20〜50倍かつ モデル確率×オッズ ≥ 1.2
+        pw = {}
+        for c, v in zip(TRI, probs[rid]):
+            pw[c[0]] = pw.get(c[0], 0) + v
+        if max(pw.values()) < 0.4:
+            top5 = np.argsort(-probs[rid])[:5]
+            for lead, snap in snaps[rid].items():
+                O = np.array([snap["tri"].get(c, 0.0) for c in TRI], dtype=float)
+                for src, odds in (("締切前", O), ("確定", fo)):
+                    if odds is None:
+                        continue
+                    pick = [int(j) for j in top5 if 20 <= odds[j] < 50 and probs[rid][j] * odds[j] >= 1.2]
+                    if pick:
+                        rows.append({**base, "type": "tri_open", "lead": lead, "src": src, "th": 1.2,
+                                     "picks": [TRI[j] for j in pick], "ev": [round(float(probs[rid][j] * odds[j]), 3) for j in pick],
                                      "odds_pre": [float(O[j]) for j in pick],
                                      "odds_final": [float(fo[j]) for j in pick] if fo is not None else None,
                                      "rets": [float(R[j]) for j in pick]})
