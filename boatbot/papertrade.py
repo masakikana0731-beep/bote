@@ -6,6 +6,7 @@
 
   python -m boatbot.papertrade              # 過去データを更新し、記録のある日をすべて採点
   python -m boatbot.papertrade --no-update  # 過去データの更新をしない
+  python -m boatbot.papertrade --no-final   # 確定オッズを取りに行かない（1日約1時間かかるので）
 
 買い方（検証中の仮説）:
   3連単：確率 = 学習モデル^W_MODEL × 市場(1/オッズ)^W_MARKET を正規化。
@@ -249,6 +250,7 @@ def summarize() -> pd.DataFrame:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-update", action="store_true")
+    ap.add_argument("--no-final", action="store_true", help="確定オッズを取りに行かない（速い。締切前オッズでの採点だけ）")
     a = ap.parse_args()
     if not a.no_update:
         from .history import update
@@ -258,7 +260,7 @@ def main() -> int:
     for d in sorted(p.name for p in ODDS_LIVE.iterdir() if p.is_dir()):
         if (OUT / f"{d}.json").exists() and d < max(hist["hd"]):
             continue
-        r = score_day(hist, d)
+        r = score_day(hist, d, fetch_final=not a.no_final)
         print(d, "採点なし（結果がまだ無い）" if r is None else f"{r['races']} レース", flush=True)
     s = summarize()
     print(s.to_string(index=False) if len(s) else "まだ記録がありません")
