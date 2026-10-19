@@ -19,17 +19,16 @@ function Step($title, $cmd) {
     Add-Content $log "$(Get-Date -Format 'MM/dd HH:mm') $title" -Encoding UTF8
     cmd.exe /c "`"$py`" $cmd >> `"$log`" 2>&1"
 }
-Step "直前情報の読み直し" "-m boatbot.collect parse-before"
-Step "特徴量" "research\wf_models.py prepare"
+if (-not ($args -contains "skipprep")) {
+    Step "直前情報の読み直し" "-m boatbot.collect parse-before"
+    Step "特徴量" "research\wf_models.py prepare"
+}
 $folds = @(@("20240930","20241231"), @("20241231","20250331"), @("20250331","20250630"), @("20250630","20250930"),
            @("20250930","20251231"), @("20251231","20260331"), @("20260331","20260630"), @("20260630","20261015"))
-for ($i = 0; $i -lt $folds.Count; $i += 2) {
-    Add-Content $log "$(Get-Date -Format 'MM/dd HH:mm') モデル $($folds[$i][0]) / $($folds[$i+1][0])" -Encoding UTF8
-    $ps = @()
-    foreach ($f in $folds[$i..($i+1)]) {
-        $ps += Start-Process -FilePath cmd.exe -ArgumentList "/c `"`"$py`" research\wf_models.py fold $($f[0]) $($f[1]) >> `"$wd\logs\wf_models.log`" 2>&1`"" -WindowStyle Hidden -PassThru
-    }
-    $ps | Wait-Process
+# メモリ不足で落ちることがあったので1つずつ順番に。できているものは飛ばす
+foreach ($f in $folds) {
+    if (Test-Path (Join-Path $wd "data\wf\info_$($f[0]).json")) { continue }
+    Step "モデル $($f[0])" "research\wf_models.py fold $($f[0]) $($f[1])"
 }
 Step "ルール探索" "research\wf_rules.py"
 Add-Content $log "$(Get-Date -Format 'MM/dd HH:mm') 完了" -Encoding UTF8
