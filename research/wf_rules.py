@@ -91,10 +91,14 @@ def race_conditions(Pm):
     return names, np.stack([filters[n] for n in names]).astype(np.float32)
 
 
-def evaluate(Pm, label):
+def evaluate(Pm, label, stakes=("均等",)):
+    """stakes：賭け方。均等=1点100円 / 確率比例=確率に応じて1〜10口 / ケリー=資金1万円のケリー基準（期待値1未満は0）"""
     names, F = race_conditions(Pm)
     rank = np.argsort(-Pm, 1)
     EV = Pm * O
+    W = {"均等": np.ones_like(Pm, dtype=np.float32),
+         "確率比例": np.clip(np.round(Pm * 50), 1, 10).astype(np.float32),
+         "ケリー": np.round(np.clip((EV - 1) / np.maximum(O - 1, 1e-6), 0, 1) * 100).astype(np.float32)}
     rows = []
     for n in (1, 2, 3, 5, 10, 20):
         topn = np.zeros_like(Pm, bool)
@@ -106,21 +110,23 @@ def evaluate(Pm, label):
                 band = topn & (O >= lo) & (O < hi)
                 for ev in (0, 1.0, 1.2, 1.5):
                     sel = band & (EV >= ev)
-                    b = sel.sum(1).astype(np.float32) * 100
-                    r = (sel * R).sum(1).astype(np.float32)
-                    h = ((sel * R) > 0).any(1).astype(np.float32)
-                    bet = F @ (b[:, None] * Qm)            # (ルール, 四半期)
-                    ret = F @ (r[:, None] * Qm)
-                    hit = F @ (h[:, None] * Qm)
-                    rows.append((n, lo, hi, ev, bet, ret, hit))
+                    for st in stakes:
+                        w = sel * W[st]
+                        b = w.sum(1).astype(np.float32) * 100
+                        r = (w * R).sum(1).astype(np.float32)
+                        h = ((w * R) > 0).any(1).astype(np.float32)
+                        bet = F @ (b[:, None] * Qm)            # (ルール, 四半期)
+                        ret = F @ (r[:, None] * Qm)
+                        hit = F @ (h[:, None] * Qm)
+                        rows.append((n, lo, hi, ev, st, bet, ret, hit))
     return names, rows
 
 
 def walk_forward(names, rows, label):
     """各四半期 k について、それより前の四半期の合計で上位のルールを選び、k で採点"""
     nF = len(names)
-    BET = np.concatenate([x[4] for x in rows]); RET = np.concatenate([x[5] for x in rows]); HIT = np.concatenate([x[6] for x in rows])
-    meta = [(names[i % nF], x[0], x[1], x[2], x[3]) for x in rows for i in range(nF)]
+    BET = np.concatenate([x[5] for x in rows]); RET = np.concatenate([x[6] for x in rows]); HIT = np.concatenate([x[7] for x in rows])
+    meta = [(names[i % nF], x[0], x[1], x[2], x[3], x[4]) for x in rows for i in range(nF)]
     out = {}
     for top_k in (1, 10, 100):
         tot_b = tot_r = 0.0
@@ -135,8 +141,8 @@ def walk_forward(names, rows, label):
             detail.append({"採点する四半期": QS[k], "選んだルールの過去回収率": round(float(roi[idx].mean()), 3),
                            "採点": round(float(r / b), 3) if b else None, "投資": int(b)})
             if top_k == 1:
-                n, nn, lo, hi, ev = meta[idx[0]]
-                detail[-1]["ルール"] = f"{n} / 上位{nn}点 / {lo:g}〜{hi:g}倍 / 期待値≥{ev}"
+                n, nn, lo, hi, ev, st = meta[idx[0]]
+                detail[-1]["ルール"] = f"{n} / 上位{nn}点 / {lo:g}〜{hi:g}倍 / 期待値≥{ev} / {st}"
         out[top_k] = (tot_r / tot_b if tot_b else None, detail)
     # 全期間で100%を超えたルールの数（参考：選ばれ方の見かけ）
     allb, allr = BET.sum(1), RET.sum(1)
@@ -152,7 +158,7 @@ def walk_forward(names, rows, label):
 
 
 import pickle
-res_model = walk_forward(*evaluate(P, "モデル"), "モデルの確率で選ぶ")
+res_model = walk_forward(*evaluate(P, "モデル", ("均等", "確率比例", "ケリー")), "モデルの確率で選ぶ（賭け方3種類を含む）")
 res_market = walk_forward(*evaluate(Q, "市場"), "市場の確率だけで選ぶ（比較用：モデルの情報なし）")
 pickle.dump({"QS": QS, "model": res_model[1], "market": res_market[1], "day": day, "quarter": quarter},
             open("data/wf_rules.pkl", "wb"))
