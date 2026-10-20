@@ -145,3 +145,10 @@ def predict(body: PredictIn):
 @app.get("/api/stats", dependencies=[Depends(auth)])
 def stats():
     return store.stats()
+
+
+@app.get("/api/papertrade", dependencies=[Depends(auth)])
+def papertrade():
+    """紙上の売買（締切前のオッズで選び、実際の結果で採点。実際には買っていない）の成績"""
+    from .papertrade import app_summary
+    return app_summary()

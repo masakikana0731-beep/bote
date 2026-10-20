@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .collect import ODDS, ODDS_LIVE, before_path
+from .collect import LEADS, ODDS, ODDS_LIVE, before_path
 
 ODDS_MULTI = Path("data/odds_multi")
 from .scraper import Fetcher, parse_beforeinfo_full, parse_odds3t
@@ -247,6 +247,57 @@ def summarize() -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def score_pending(fetch_final: bool = False, hist: pd.DataFrame | None = None) -> list[str]:
+    """締切前オッズの記録があり、結果が出ていて、まだ採点していない日を採点する（アプリが毎朝呼ぶ）"""
+    if not ODDS_LIVE.exists():
+        return []
+    if hist is None:
+        from .ml import load_history
+        hist = load_history()
+    last = max(hist["hd"])
+    done = []
+    for d in sorted(p.name for p in ODDS_LIVE.iterdir() if p.is_dir()):
+        if d > last or ((OUT / f"{d}.json").exists() and d < last):
+            continue
+        if score_day(hist, d, fetch_final=fetch_final) is not None:
+            done.append(d)
+    return done
+
+
+# アプリの成績タブに出す買い方（締切5分前のオッズで選び、1点100円・上限なし）
+APP_STRATEGIES = [
+    ("place", 1.0, "複勝", "モデルの確率×オッズが一番高い1点（期待値1.0以上）"),
+    ("win", 1.0, "単勝", "同上"),
+    ("wide", 1.0, "拡連複", "同上"),
+    ("tri", 0.9, "3連単（モデル＋市場）", "モデルと市場を混ぜた確率で期待値0.9以上の目（最大5点）"),
+    ("tri_open", 1.2, "3連単（荒れそうなレース）", "本命の1着確率40%未満のレースで、20〜50倍・期待値1.2以上"),
+]
+
+
+def app_summary() -> dict:
+    """成績タブ用：買い方ごとの通算と日別の収支"""
+    rows = []
+    for p in sorted(OUT.glob("*.json")):
+        for r in json.loads(p.read_text(encoding="utf-8"))["rows"]:
+            if r["src"] == "締切前" and r["lead"] == max(LEADS):
+                rows.append((p.stem, r.get("type") or "tri", r["th"], len(r["picks"]), sum(r["rets"]),
+                             sum(1 for x in r["rets"] if x > 0)))
+    out = []
+    for t, th, name, desc in APP_STRATEGIES:
+        days: dict = {}
+        for d, tt, tth, n, ret, hit in rows:
+            if tt == t and tth == th:
+                x = days.setdefault(d, {"day": d, "races": 0, "bet": 0, "ret": 0, "hits": 0})
+                x["races"] += 1; x["bet"] += 100 * n; x["ret"] += int(ret); x["hits"] += hit
+        daily = sorted(days.values(), key=lambda x: x["day"], reverse=True)
+        bet, ret = sum(x["bet"] for x in daily), sum(x["ret"] for x in daily)
+        out.append({"name": name, "desc": desc, "days": len(daily), "races": sum(x["races"] for x in daily),
+                    "hits": sum(x["hits"] for x in daily), "bet": bet, "ret": ret,
+                    "roi": round(ret / bet, 3) if bet else None, "daily": daily})
+    scored = sorted(p.stem for p in OUT.glob("*.json")) if OUT.exists() else []
+    return {"strategies": out, "scored_days": len(scored), "last_day": scored[-1] if scored else None}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-update", action="store_true")
@@ -255,13 +306,8 @@ def main() -> int:
     if not a.no_update:
         from .history import update
         update(date.today())
-    from .ml import load_history
-    hist = load_history()
-    for d in sorted(p.name for p in ODDS_LIVE.iterdir() if p.is_dir()):
-        if (OUT / f"{d}.json").exists() and d < max(hist["hd"]):
-            continue
-        r = score_day(hist, d, fetch_final=not a.no_final)
-        print(d, "採点なし（結果がまだ無い）" if r is None else f"{r['races']} レース", flush=True)
+    for d in score_pending(fetch_final=not a.no_final):
+        print(d, "採点しました", flush=True)
     s = summarize()
     print(s.to_string(index=False) if len(s) else "まだ記録がありません")
     return 0

@@ -141,9 +141,20 @@ class Engine:
                 log.info("過去データを更新しました")
         except Exception as e:
             log.warning("過去データの更新に失敗: %s", e)
+        threading.Thread(target=self._score_papertrade, daemon=True).start()
         for jcd in self.client.venues(hd):
             self.store.add_schedule(hd, jcd, self.client.deadlines(jcd, hd))
         log.info("%s のスケジュールを取得しました", hd)
+
+    def _score_papertrade(self) -> None:
+        """前日までの紙上の売買（締切前オッズで選んだ場合）を採点する。collect watch の記録がある日だけ"""
+        try:
+            from .papertrade import score_pending
+            days = score_pending(fetch_final=False)
+            if days:
+                log.info("紙上の売買を採点しました: %s", ", ".join(days))
+        except Exception as e:
+            log.warning("紙上の売買の採点に失敗: %s", e)
 
     # ---- 学習モデル
     def ml_probs(self, info, hd: str) -> tuple[dict | None, str]:

@@ -233,6 +233,22 @@ async function loadStats() {
     <tr><th>通算</th><th>${pl(sum.real_bet, sum.real_ret)}</th><th>${pl(sum.virt_bet, sum.virt_ret)}</th><th>${sum.hits}/${sum.settled}</th></tr>
     ${rows.map((r) => `<tr><td>${r.hd.slice(4, 6)}/${r.hd.slice(6)}</td><td>${pl(r.real_bet, r.real_ret)}</td><td>${pl(r.virt_bet, r.virt_ret)}</td><td>${r.hits}/${r.settled}</td></tr>`).join("")}
   </table>` : `<p class="hint">まだデータがありません</p>`;
+  loadPaper(pl);
+}
+
+async function loadPaper(pl) {
+  const p = await api("/api/papertrade");
+  if (!p.scored_days) { $("#paper").innerHTML = `<p class="hint">まだ採点した日がありません</p>`; return; }
+  const roi = (x) => (x == null ? "-" : `<span class="${x >= 1 ? "plus" : "minus"}">${(x * 100).toFixed(0)}%</span>`);
+  $("#paper").innerHTML = `<p class="hint">採点した日 ${p.scored_days}日（最新 ${p.last_day.slice(4, 6)}/${p.last_day.slice(6)}）</p>` +
+    p.strategies.map((s) => `<div class="card">
+      <div class="head"><span class="title">${esc(s.name)}</span><span>${roi(s.roi)}</span></div>
+      <div class="hint">${esc(s.desc)}</div>
+      <div>通算 ${s.races}レース・的中${s.hits} 投資${yen(s.bet)} 払戻${yen(s.ret)} ${pl(s.bet, s.ret)}</div>
+      <details><summary class="hint">日別</summary><table class="t"><tr><th>日付</th><th>レース</th><th>的中</th><th>収支</th></tr>
+      ${s.daily.map((d) => `<tr><td>${d.day.slice(4, 6)}/${d.day.slice(6)}</td><td>${d.races}</td><td>${d.hits}</td><td>${pl(d.bet, d.ret)}</td></tr>`).join("")}
+      </table></details></div>`).join("") +
+    `<p class="hint">的中が数回しかない買い方は、たまたまの大当たりで大きく上下する。数か月分たまるまでは参考程度に</p>`;
 }
 
 async function load() {
