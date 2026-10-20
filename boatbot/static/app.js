@@ -39,6 +39,25 @@ function renderBuyLog() {
     <span>${l.ok ? "✅" : l.uncertain ? "❓" : "❌"} ${esc(l.message)}</span></div>`).join("") || `<p class="hint">まだありません</p>`;
 }
 
+// 方針2：艇ごとにモデルと市場（オッズ）の見立てを並べる
+function insightTable(r) {
+  const ins = r.info && r.info.insight;
+  if (!ins || !ins.boats) return "";
+  const p = (x) => (x == null ? "-" : (x * 100).toFixed(x >= 0.99 && x < 1 ? 1 : 0) + "%");
+  const rows = ins.boats.map((b) => {
+    const d = b.diff_win == null ? "" : `${b.diff_win >= 0 ? "+" : ""}${(b.diff_win * 100).toFixed(0)}`;
+    return `<tr${b.notable ? ' class="notable"' : ""}><td>${boats(String(b.waku))}${b.notable ? " ⭐" : ""}</td>
+      <td>${p(b.model_win)}</td><td>${p(b.market_win)}</td><td class="${b.diff_win >= 0 ? "plus" : "minus"}">${d}</td>
+      <td>${p(b.model_top2)}</td></tr>`;
+  }).join("");
+  const solid = (ins.solid || []).map((x) => `<span class="tag solid">ほぼ確実な本命 ${x.waku}号艇（${x.type} ${p(x.prob)}）</span>`).join(" ");
+  return `<details class="insight" data-rid="${r.id}"><summary>モデルと市場の見立て${solid ? " 🎯" : ""}</summary>
+    ${solid ? `<div>${solid}</div><div class="hint">過去2年、この条件で買うと回収率100〜104%（ほぼ元返し）。負けにくいだけで、儲けは小さい</div>` : ""}
+    <table class="t"><tr><th>艇</th><th>モデル1着</th><th>市場1着</th><th>差</th><th>モデル2着内</th></tr>${rows}</table>
+    <div class="hint">⭐ = モデルが市場より5ポイント以上高く見ている艇。市場（オッズ）のほうが平均的には正確なので、参考程度に。
+    締切前のオッズは確定までに動く（単勝の大穴は確定時に半分以下になることが多い）</div></details>`;
+}
+
 function recCard(r) {
   const label = { pending: "未対応", bought: "購入済", skipped: "見送った", pass: "ツールが見送り",
     paper: "仮想購入", failed: "自動購入失敗", unknown: "購入不明・要確認" }[r.status];
@@ -73,13 +92,16 @@ function recCard(r) {
   return `<div class="card">
     <div class="head"><span class="title">${esc(r.venue)} ${r.rno}R</span>
       <span class="hint">締切 ${r.deadline}</span><span class="tag ${r.status}">${label}</span></div>
-    ${body}${result}${actions}</div>`;
+    ${body}${insightTable(r)}${result}${actions}</div>`;
 }
 
 function renderToday() {
   $("#error").classList.toggle("hidden", !state.last_error);
   $("#error").textContent = state.last_error ? "エラー: " + state.last_error : "";
+  // 30秒ごとの再描画で、開いている「モデルと市場の見立て」が閉じないようにする
+  const open = new Set([...document.querySelectorAll("details.insight[open]")].map((d) => d.dataset.rid));
   $("#recs").innerHTML = state.recs.length ? state.recs.map(recCard).join("") : `<p class="hint">まだありません</p>`;
+  document.querySelectorAll("details.insight").forEach((d) => { if (open.has(d.dataset.rid)) d.open = true; });
   $("#upcoming").innerHTML = state.upcoming.map((u) => `<div class="row">
       <span>${esc(u.venue)} ${u.rno}R <span class="hint">締切 ${u.deadline}</span></span>
       <button data-predict="${u.jcd}:${u.rno}">今すぐ予想</button></div>`).join("") || `<p class="hint">本日の対象レースは終了 / 未取得</p>`;

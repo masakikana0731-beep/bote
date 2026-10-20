@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from .executor import AbortPurchase, Executor, PaperExecutor, TeleboatExecutor
+from .insight import boat_insight
 from .model import hard_daily_cap, make_plan
 from .scraper import VENUES, BoatraceClient
 from .store import Store
@@ -188,6 +189,7 @@ class Engine:
                        "motor_2r": b.motor_2r, "ex_time": b.ex_time, "course": b.course,
                        "win_prob": round((plan.win_probs or {}).get(b.waku, 0), 3)} for b in info.boats],
             "settings": {"gamble": s.gamble, "selectivity": s.selectivity, "crowd": s.crowd},
+            "insight": boat_insight(probs, odds, plan.win_probs),
             "predictor": used,
         }
         status = "pending" if tickets else "pass"

@@ -57,3 +57,7 @@ label.check { display: flex; gap: 8px; align-items: center; }
 .venues label { margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 14px; font-size: 13px; }
 .venues input { margin: 0 4px 0 0; }
 .plus { color: var(--good); font-weight: bold; } .minus { color: var(--bad); font-weight: bold; }
+.insight { margin-top: 6px; font-size: 13px; }
+.insight summary { cursor: pointer; color: var(--accent); }
+.insight tr.notable td { font-weight: bold; }
+.tag.solid { background: var(--good); color: #fff; display: inline-block; margin: 4px 0; }
