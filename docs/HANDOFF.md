@@ -88,6 +88,9 @@ python -m boatbot.backtest fetch-odds-multi --workers 4   # 残り約2,360レー
   - レースのカードに「モデルと市場の見立て」（`boatbot/insight.py`、艇ごとのモデル/市場の確率・差・ほぼ確実な本命の印）
   - 成績タブに「紙上の売買」（`/api/papertrade`、`papertrade.app_summary`）。アプリが毎朝、前日分を自動採点（`Engine._score_papertrade`）
   - 次の候補：締切前→確定のオッズの動きの表示（3連単のデータがたまってから）
+- **2026-10-21 01:10〜10-28 01:10 の1週間、アプリ本体を常時起動して試運転中**（`scripts/app.ps1`、WMI から独立起動、期限で自動停止）
+  - 画面：家の LAN `http://192.168.1.73:8000` / Tailscale `http://100.115.227.2:8000`（BOATBOT_TOKEN は未設定）
+  - 自動投資は off（予想・記録・毎朝の紙上の売買の採点だけ）。ログ `logs/app.log`, `logs/app_err.log`
 
 
 ### 2026-10-15 朝の重要な発見（必読）
