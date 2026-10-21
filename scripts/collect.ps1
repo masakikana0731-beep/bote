@@ -21,4 +21,10 @@ $env:PYTHONPATH = "$wd;$wd\.venv\Lib\site-packages"
 $name = $args[0]
 # ログは UTF-8 のまま追記する（PowerShell の *>> は UTF-16 になるので cmd のリダイレクトを使う）
 $py = Join-Path $pyhome "python.exe"
-cmd.exe /c "`"$py`" -m boatbot.collect $($args -join ' ') >> `"$wd\logs\collect_$name.log`" 2>&1"
+# 予期せず止まったら（終了コードが0以外）、1分後に再開する。正常に取り終えたら（0）終わる
+while ($true) {
+    cmd.exe /c "`"$py`" -m boatbot.collect $($args -join ' ') >> `"$wd\logs\collect_$name.log`" 2>&1"
+    if ($LASTEXITCODE -eq 0) { break }
+    Add-Content (Join-Path $wd "logs\collect_$name.log") "$(Get-Date -Format 'MM/dd HH:mm') 予期せず停止（終了コード $LASTEXITCODE）。1分後に再開します" -Encoding UTF8
+    Start-Sleep -Seconds 60
+}
